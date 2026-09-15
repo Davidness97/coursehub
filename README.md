@@ -27,7 +27,7 @@ Puoi eseguire CourseHub in due modalità: tramite Docker Compose (consigliato pe
 Questa modalità è utile per lo sviluppo o il debug, avviando Node.js direttamente.
 
 1. Installa Node.js (versione 20 LTS o superiore).
-2. Clona il repository ed entra nella cartella del progetto.
+2. Clona il repository ed entra nella cartella `CourseHubAntigravity`.
 3. Installa le dipendenze:
    ```bash
    npm install

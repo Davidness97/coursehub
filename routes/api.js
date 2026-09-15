@@ -243,7 +243,7 @@ router.post('/download-cover', async (req, res) => {
   }
 });
 
-// POST /api/search-metadata (Google Custom Search)
+// POST /api/search-metadata (Google Custom Search + Fallback)
 router.post('/search-metadata', async (req, res) => {
   const { folder_path, query } = req.body;
   
@@ -251,56 +251,98 @@ router.post('/search-metadata', async (req, res) => {
     return res.status(400).json({ error: 'Fornire folder_path o query' });
   }
 
-  const apiKey = process.env.GOOGLE_API_KEY;
-  const cx = process.env.GOOGLE_CX;
+  let apiKey = process.env.GOOGLE_API_KEY;
+  let cx = process.env.GOOGLE_CX;
+  if (apiKey) apiKey = apiKey.replace(/['"]/g, '').trim();
+  if (cx) cx = cx.replace(/['"]/g, '').trim();
 
-  if (!apiKey || !cx) {
-    return res.status(400).json({ error: 'Per usare questa funzione devi configurare GOOGLE_API_KEY e GOOGLE_CX nel file .env' });
+  let searchQuery = query;
+  if (!searchQuery) {
+    searchQuery = folder_path.replace(/[\/\\]/g, ' ').replace(/[-_]/g, ' ');
   }
 
+  let description = '';
+  let images = [];
+
+  // ==========================================
+  // METODO 1: Google Custom Search (Se configurato)
+  // ==========================================
+  if (apiKey && cx) {
+    try {
+      const textUrl = new URL('https://www.googleapis.com/customsearch/v1');
+      textUrl.searchParams.append('key', apiKey);
+      textUrl.searchParams.append('cx', cx);
+      textUrl.searchParams.append('q', searchQuery);
+
+      const textRes = await fetch(textUrl.href);
+      const textData = await textRes.json();
+
+      if (textData.error) {
+        throw new Error(textData.error.message); // Will trigger the catch and fallback
+      }
+
+      if (textData.items && textData.items.length > 0) {
+        description = textData.items[0].snippet || '';
+      }
+
+      const imgUrl = new URL('https://www.googleapis.com/customsearch/v1');
+      imgUrl.searchParams.append('key', apiKey);
+      imgUrl.searchParams.append('cx', cx);
+      imgUrl.searchParams.append('q', searchQuery);
+      imgUrl.searchParams.append('searchType', 'image');
+      
+      const imgRes = await fetch(imgUrl.href);
+      const imgData = await imgRes.json();
+
+      if (imgData.items && imgData.items.length > 0) {
+        images = imgData.items.slice(0, 5).map(item => item.link);
+      }
+      
+      return res.json({ success: true, description, images, query: searchQuery, source: 'google' });
+    } catch (err) {
+      console.warn("Google API fallita, passo al Fallback. Errore:", err.message);
+      // Fall through to Method 2
+    }
+  }
+
+  // ==========================================
+  // METODO 2: Fallback Pubblico (Wikipedia + iTunes)
+  // Zero configurazione, funziona sempre
+  // ==========================================
   try {
-    let searchQuery = query;
-    if (!searchQuery) {
-      searchQuery = folder_path.replace(/[\/\\]/g, ' ').replace(/[-_]/g, ' ');
+    // 1. Descrizione da Wikipedia (Estrazione primo paragrafo)
+    const wikiUrl = new URL(`https://it.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchQuery.split(' ')[0])}`);
+    try {
+      const wikiRes = await fetch(wikiUrl.href, { headers: { 'User-Agent': 'CourseHub/1.0' } });
+      if (wikiRes.ok) {
+        const wikiData = await wikiRes.json();
+        if (wikiData.extract) description = wikiData.extract;
+      }
+    } catch (e) {
+      console.warn("Wikipedia fallback fallito:", e.message);
     }
 
-    let description = '';
-    let images = [];
-
-    // 1. Ricerca testuale per descrizione
-    const textUrl = new URL('https://www.googleapis.com/customsearch/v1');
-    textUrl.searchParams.append('key', apiKey);
-    textUrl.searchParams.append('cx', cx);
-    textUrl.searchParams.append('q', searchQuery);
-
-    const textRes = await fetch(textUrl.href);
-    const textData = await textRes.json();
-
-    if (textData.error) {
-      throw new Error(textData.error.message);
-    }
-
-    if (textData.items && textData.items.length > 0) {
-      description = textData.items[0].snippet || '';
-    }
-
-    // 2. Ricerca immagini per copertine
-    const imgUrl = new URL('https://www.googleapis.com/customsearch/v1');
-    imgUrl.searchParams.append('key', apiKey);
-    imgUrl.searchParams.append('cx', cx);
-    imgUrl.searchParams.append('q', searchQuery);
-    imgUrl.searchParams.append('searchType', 'image');
+    // 2. Immagini ad alta qualità da iTunes Podcast/Corsi
+    const itunesUrl = new URL('https://itunes.apple.com/search');
+    itunesUrl.searchParams.append('term', searchQuery);
+    itunesUrl.searchParams.append('media', 'podcast');
+    itunesUrl.searchParams.append('limit', '5');
     
-    const imgRes = await fetch(imgUrl.href);
-    const imgData = await imgRes.json();
-
-    if (imgData.items && imgData.items.length > 0) {
-      images = imgData.items.slice(0, 5).map(item => item.link);
+    try {
+      const itunesRes = await fetch(itunesUrl.href);
+      if (itunesRes.ok) {
+        const itunesData = await itunesRes.json();
+        if (itunesData.results && itunesData.results.length > 0) {
+          images = itunesData.results.map(r => r.artworkUrl600);
+        }
+      }
+    } catch (e) {
+      console.warn("iTunes fallback fallito:", e.message);
     }
 
-    res.json({ success: true, description, images, query: searchQuery });
+    res.json({ success: true, description, images, query: searchQuery, source: 'fallback' });
   } catch (err) {
-    res.status(500).json({ error: 'Errore API Google: ' + err.message });
+    res.status(500).json({ error: 'Errore ricerca di emergenza: ' + err.message });
   }
 });
 
