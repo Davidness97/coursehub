@@ -45,7 +45,7 @@ function getAllCourses(options = {}) {
 }
 
 function getCategories() {
-  const rows = db.prepare('SELECT DISTINCT category FROM courses WHERE category IS NOT NULL AND category != "" ORDER BY category ASC').all();
+  const rows = db.prepare("SELECT DISTINCT category FROM courses WHERE category IS NOT NULL AND category != '' ORDER BY category ASC").all();
   return rows.map(r => r.category);
 }
 
