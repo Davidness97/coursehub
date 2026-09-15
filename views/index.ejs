@@ -1,0 +1,127 @@
+<%- include('partials/header') %>
+
+<style>
+.course-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.course-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.course-cover {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    background-color: #333;
+}
+
+.course-content {
+    padding: 1.5rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.course-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+}
+
+.course-desc {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.course-meta {
+    margin-top: auto;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.progress-bar-container {
+    height: 6px;
+    background-color: var(--border);
+    border-radius: 3px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background-color: var(--success);
+}
+
+.course-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+.course-actions .btn {
+    flex: 1;
+}
+</style>
+
+<% if (courses.length === 0) { %>
+    <div style="text-align: center; padding: 4rem 2rem; background: var(--bg-card); border-radius: var(--radius); border: 1px dashed var(--border);">
+        <h2 style="margin-top: 0;">Nessun corso presente</h2>
+        <p style="color: var(--text-muted); margin-bottom: 2rem;">Inizia organizzando la tua libreria aggiungendo una cartella corso.</p>
+        <a href="/courses/add" class="btn">Aggiungi il tuo primo corso</a>
+    </div>
+<% } else { %>
+    <div class="course-grid">
+        <% courses.forEach(function(course) { %>
+            <div class="course-card">
+                <img src="<%= getCourseCoverUrl(course) %>" alt="Cover" class="course-cover">
+                <div class="course-content">
+                    <h3 class="course-title"><%= course.title %></h3>
+                    <% if (course.description) { %>
+                        <p class="course-desc"><%= course.description %></p>
+                    <% } %>
+                    
+                    <div class="course-meta">
+                        <span><%= course.total_lessons || 0 %> lezioni video</span>
+                        <span>
+                            <% if (course.progress_pct === null) { %>
+                                Non iniziato
+                            <% } else if (course.progress_pct === 100) { %>
+                                Completato
+                            <% } else { %>
+                                <%= course.progress_pct %>% completato
+                            <% } %>
+                        </span>
+                    </div>
+                    
+                    <% if (course.progress_pct !== null && course.progress_pct > 0) { %>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: <%= course.progress_pct %>%;"></div>
+                        </div>
+                    <% } %>
+                    
+                    <div class="course-actions">
+                        <a href="/courses/<%= course.id %>" class="btn">
+                            <%= (course.progress_pct === null || course.progress_pct === 0) ? 'Inizia' : 'Riprendi' %>
+                        </a>
+                        <a href="/courses/<%= course.id %>/edit" class="btn btn-outline">Modifica</a>
+                    </div>
+                </div>
+            </div>
+        <% }); %>
+    </div>
+<% } %>
+
+<%- include('partials/footer') %>

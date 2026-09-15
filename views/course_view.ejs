@@ -1,0 +1,191 @@
+<%- include('partials/header') %>
+
+<% if (reqQuery && reqQuery.refreshed) { %>
+    <div class="alert" style="background-color: rgba(0, 204, 102, 0.1); color: var(--success); border-color: var(--success);">
+        <strong>Contenuti aggiornati!</strong> 
+        Aggiunti: <%= reqQuery.added %>, 
+        Aggiornati: <%= reqQuery.updated %>, 
+        Riattivati: <%= reqQuery.reactivated %>.
+    </div>
+<% } %>
+
+<div style="display: flex; gap: 2rem; margin-bottom: 2rem; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden;">
+    <img src="<%= getCourseCoverUrl(course) %>" alt="Cover" style="width: 300px; object-fit: cover; background: #333;">
+    <div style="padding: 2rem; flex: 1;">
+        <h2 style="margin-top: 0; font-size: 2rem;"><%= course.title %></h2>
+        <% if (course.description) { %>
+            <p style="color: var(--text-muted); font-size: 1.1rem;"><%= course.description %></p>
+        <% } %>
+        <div style="margin-top: 2rem; display: flex; gap: 1rem;">
+            <a href="/courses/<%= course.id %>/edit" class="btn btn-outline">Modifica Corso</a>
+            <form action="/courses/<%= course.id %>/refresh" method="POST" style="margin: 0;">
+                <button type="submit" class="btn btn-outline">Aggiorna contenuti</button>
+            </form>
+            <form action="/courses/<%= course.id %>/delete" method="POST" style="margin: 0;" onsubmit="return confirm('Vuoi eliminare il record di questo corso? I file non verranno cancellati.');">
+                <button type="submit" class="btn btn-outline" style="border-color: var(--danger); color: var(--danger);">Elimina record</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.section-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 2rem;
+    overflow: hidden;
+}
+.section-header {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.section-header h3 {
+    margin: 0;
+}
+.file-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.file-item {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.file-item:last-child {
+    border-bottom: none;
+}
+.file-item:hover {
+    background: rgba(255,255,255,0.03);
+}
+.badge {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    background: #444;
+    color: #eee;
+}
+.badge.completed { background: var(--success); color: #000; }
+</style>
+
+<% function renderFile(file) { %>
+    <li class="file-item">
+        <div>
+            <% if (file.fileType === 'video') { 
+                const dbLesson = dbLessonsMap.get(file.relativePath);
+                const prog = dbLesson ? progressMap[dbLesson.id] : null;
+                const completed = prog && prog.completed === 1;
+            %>
+                <span style="margin-right: 0.5rem;">🎥</span>
+                <% if (dbLesson) { %>
+                    <a href="/courses/<%= course.id %>/lessons/<%= dbLesson.id %>" style="font-weight: 500; color: var(--text-main); text-decoration: none;">
+                        <%= file.title %>
+                    </a>
+                <% } else { %>
+                    <span style="font-weight: 500; color: var(--text-main); opacity: 0.7;"><%= file.title %> (In attesa di sync)</span>
+                <% } %>
+                
+                <% if (completed) { %>
+                    <span class="badge completed" style="margin-left: 1rem;">Completato</span>
+                <% } %>
+            <% } else { %>
+                <span style="margin-right: 0.5rem;">📄</span>
+                <%
+                    const encodedPath = file.relativePath.split('/').map(encodeURIComponent).join('/');
+                %>
+                <a href="/files/<%= encodedPath %>" target="_blank" style="font-weight: 500; color: var(--text-muted); text-decoration: none;">
+                    <%= file.title %>
+                </a>
+            <% } %>
+            
+            <% if (file.path_inside_section) { %>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 2rem;">
+                    <%= file.path_inside_section %>
+                </div>
+            <% } %>
+        </div>
+    </li>
+<% } %>
+
+<% if (rootSection.lessons.length > 0 || rootSection.materials.length > 0) { %>
+    <div class="section-card">
+        <div class="section-header">
+            <h3><%= rootSection.title %></h3>
+        </div>
+        <ul class="file-list">
+            <% rootSection.lessons.forEach(renderFile); %>
+            <% rootSection.materials.forEach(renderFile); %>
+        </ul>
+    </div>
+<% } %>
+
+<% sections.forEach(function(sec) { %>
+    <% if (sec.lessons.length > 0 || sec.materials.length > 0) { %>
+        <div class="section-card">
+            <div class="section-header">
+                <h3><%= sec.title %></h3>
+            </div>
+            <ul class="file-list">
+                <% sec.lessons.forEach(renderFile); %>
+                <% sec.materials.forEach(renderFile); %>
+            </ul>
+        </div>
+    <% } %>
+<% }); %>
+
+<!-- Course Note Area -->
+<div class="section-card" style="margin-top: 2rem;">
+    <div class="section-header">
+        <h3>Appunti del Corso</h3>
+        <div id="course-note-status" style="font-size: 0.85rem; color: var(--text-muted); float: right;"></div>
+    </div>
+    <div style="padding: 1.5rem;">
+        <textarea id="course-note" rows="8" placeholder="Scrivi qui gli appunti generali del corso..." data-course-id="<%= course.id %>"><%= typeof courseNote !== 'undefined' ? courseNote : '' %></textarea>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const noteArea = document.getElementById('course-note');
+    if (!noteArea) return;
+    const statusText = document.getElementById('course-note-status');
+    const courseId = noteArea.dataset.courseId;
+    let typingTimer;
+    
+    noteArea.addEventListener('keyup', () => {
+        clearTimeout(typingTimer);
+        statusText.textContent = 'Salvataggio in corso...';
+        typingTimer = setTimeout(saveNote, 1000);
+    });
+    
+    noteArea.addEventListener('keydown', () => clearTimeout(typingTimer));
+
+    function saveNote() {
+        fetch('/api/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'course', id: courseId, content: noteArea.value })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                statusText.textContent = 'Salvata: ' + new Date().toLocaleTimeString();
+                statusText.style.color = 'var(--text-muted)';
+            } else {
+                statusText.textContent = 'Errore nel salvataggio';
+                statusText.style.color = 'var(--danger)';
+            }
+        })
+        .catch(err => {
+            statusText.textContent = 'Errore di rete';
+            statusText.style.color = 'var(--danger)';
+        });
+    }
+});
+</script>
+
+<%- include('partials/footer') %>

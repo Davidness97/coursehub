@@ -1,0 +1,194 @@
+<%- include('partials/header') %>
+
+<div style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">
+    <a href="/courses/<%= course.id %>" style="color: var(--primary);">Corso: <%= course.title %></a> &gt; 
+    <span><%= sectionTitle %></span> &gt; 
+    <span style="color: var(--text-main);"><%= lesson.title %></span>
+</div>
+
+<div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+    <!-- Main Content: Player & Notes -->
+    <div style="flex: 1; min-width: 600px;">
+        <div style="background: #000; border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem;">
+            <%
+                const encodedPath = lesson.relative_path.split('/').map(encodeURIComponent).join('/');
+            %>
+            <video 
+                id="lesson-video" 
+                controls 
+                style="width: 100%; display: block;" 
+                data-lesson-id="<%= lesson.id %>"
+                data-last-position="<%= progress.last_position || 0 %>"
+                data-completed="<%= progress.completed || 0 %>">
+                <source src="/files/<%= encodedPath %>" type="<%= lesson.file_type === 'video' ? 'video/mp4' : '' %>">
+                Il tuo browser non supporta il tag video.
+            </video>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h2 style="margin: 0;"><%= lesson.title %></h2>
+            <button id="toggle-completed" class="btn btn-outline" style="<%= progress.completed ? 'background: var(--success); color: #000; border-color: var(--success);' : '' %>">
+                <%= progress.completed ? 'Segna come non completata' : 'Segna come completata' %>
+            </button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-bottom: 2rem;">
+            <% if (prevLesson) { %>
+                <a href="/courses/<%= course.id %>/lessons/<%= prevLesson.id %>" class="btn btn-outline">⬅ Lezione precedente</a>
+            <% } else { %>
+                <div></div>
+            <% } %>
+            
+            <% if (nextLesson) { %>
+                <a href="/courses/<%= course.id %>/lessons/<%= nextLesson.id %>" class="btn btn-outline">Prossima lezione ➡</a>
+            <% } else { %>
+                <div></div>
+            <% } %>
+        </div>
+
+        <div style="background: var(--bg-card); padding: 1.5rem; border-radius: var(--radius); border: 1px solid var(--border);">
+            <h3>Appunti Lezione</h3>
+            <div id="note-status" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; height: 1.2em;"></div>
+            <textarea id="lesson-note" rows="10" placeholder="Scrivi qui i tuoi appunti... Verranno salvati automaticamente." data-lesson-id="<%= lesson.id %>"><%= note %></textarea>
+        </div>
+    </div>
+
+    <!-- Sidebar: Playlist -->
+    <div style="width: 350px; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); max-height: 80vh; overflow-y: auto;">
+        <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); position: sticky; top: 0;">
+            <h3 style="margin: 0;">Playlist Corso</h3>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+            <% allLessons.forEach((l, index) => { %>
+                <a href="/courses/<%= course.id %>/lessons/<%= l.id %>" 
+                   style="padding: 1rem; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; <%= l.id === lesson.id ? 'background: rgba(77, 166, 255, 0.1); border-left: 4px solid var(--primary);' : '' %>">
+                    <div style="width: 24px; text-align: center; color: var(--text-muted); font-size: 0.9rem;"><%= index + 1 %></div>
+                    <div style="flex: 1; font-size: 0.95rem; font-weight: <%= l.id === lesson.id ? 'bold' : 'normal' %>;"><%= l.title %></div>
+                </a>
+            <% }) %>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Video Player Progress ---
+    const video = document.getElementById('lesson-video');
+    const lessonId = video.dataset.lessonId;
+    let isCompleted = parseInt(video.dataset.completed, 10) === 1;
+    let initialSeekDone = false;
+    
+    const saveProgress = (forceCompleted = null) => {
+        const completed = forceCompleted !== null ? forceCompleted : isCompleted;
+        fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                lesson_id: lessonId,
+                completed: completed ? 1 : 0,
+                last_position: video.currentTime,
+                total_seconds: video.duration || null
+            })
+        }).catch(err => console.error('Errore salvataggio progresso:', err));
+    };
+
+    video.addEventListener('loadedmetadata', () => {
+        if (!initialSeekDone) {
+            const startPos = parseFloat(video.dataset.lastPosition);
+            if (startPos > 0 && startPos < video.duration - 5) {
+                video.currentTime = startPos;
+            }
+            initialSeekDone = true;
+        }
+    });
+
+    // Save progress periodically (e.g., every 10 seconds)
+    let lastSaveTime = 0;
+    video.addEventListener('timeupdate', () => {
+        const now = Math.floor(video.currentTime);
+        if (now - lastSaveTime >= 10) {
+            lastSaveTime = now;
+            saveProgress();
+        }
+        
+        // Auto-complete at 90%
+        if (!isCompleted && video.duration > 0) {
+            if (video.currentTime / video.duration >= 0.9) {
+                isCompleted = true;
+                saveProgress(true);
+                updateBtnState();
+            }
+        }
+    });
+
+    video.addEventListener('pause', () => saveProgress());
+    video.addEventListener('ended', () => {
+        isCompleted = true;
+        saveProgress(true);
+        updateBtnState();
+    });
+    window.addEventListener('beforeunload', () => saveProgress());
+
+    // --- Manual Complete Toggle ---
+    const toggleBtn = document.getElementById('toggle-completed');
+    function updateBtnState() {
+        if (isCompleted) {
+            toggleBtn.textContent = 'Segna come non completata';
+            toggleBtn.style.background = 'var(--success)';
+            toggleBtn.style.color = '#000';
+            toggleBtn.style.borderColor = 'var(--success)';
+        } else {
+            toggleBtn.textContent = 'Segna come completata';
+            toggleBtn.style.background = 'transparent';
+            toggleBtn.style.color = 'var(--primary)';
+            toggleBtn.style.borderColor = 'var(--primary)';
+        }
+    }
+    
+    toggleBtn.addEventListener('click', () => {
+        isCompleted = !isCompleted;
+        updateBtnState();
+        saveProgress(isCompleted);
+    });
+
+    // --- Note Autosave ---
+    const noteArea = document.getElementById('lesson-note');
+    const statusText = document.getElementById('note-status');
+    let typingTimer;
+    const doneTypingInterval = 1000;
+
+    noteArea.addEventListener('keyup', () => {
+        clearTimeout(typingTimer);
+        statusText.textContent = 'Salvataggio in corso...';
+        typingTimer = setTimeout(saveNote, doneTypingInterval);
+    });
+    
+    noteArea.addEventListener('keydown', () => {
+        clearTimeout(typingTimer);
+    });
+
+    function saveNote() {
+        const content = noteArea.value;
+        fetch('/api/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'lesson', id: lessonId, content })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                statusText.textContent = 'Salvata: ' + new Date().toLocaleTimeString();
+            } else {
+                statusText.textContent = 'Errore nel salvataggio';
+                statusText.style.color = 'var(--danger)';
+            }
+        })
+        .catch(err => {
+            statusText.textContent = 'Errore di rete';
+            statusText.style.color = 'var(--danger)';
+        });
+    }
+});
+</script>
+
+<%- include('partials/footer') %>

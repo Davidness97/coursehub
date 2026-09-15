@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  coursehub:
+    build: .
+    container_name: coursehub
+    ports:
+      - "3000:3000"
+    environment:
+      COURSES_PATH: /courses
+      DATA_PATH: /data
+    volumes:
+      # Sostituire con il percorso reale della propria cartella corsi
+      - ./sample-courses:/courses:ro
+      # Sostituire con il percorso reale dove salvare i dati dell'app (db, covers)
+      - ./sample-data:/data
+    restart: unless-stopped

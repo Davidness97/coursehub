@@ -1,0 +1,318 @@
+<%- include('partials/header') %>
+
+<h2><%= course.id ? 'Modifica Corso' : 'Aggiungi Corso' %></h2>
+
+<% if (error) { %>
+    <div class="alert"><%= error %></div>
+<% } %>
+
+<form action="<%= course.id ? '/courses/' + course.id + '/edit' : '/courses/add' %>" method="POST" enctype="multipart/form-data" style="max-width: 600px;">
+    
+    <div class="form-group">
+        <label for="title">Titolo *</label>
+        <input type="text" id="title" name="title" value="<%= course.title || '' %>" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="description">Descrizione</label>
+        <textarea id="description" name="description" rows="3"><%= course.description || '' %></textarea>
+    </div>
+    
+    <div class="form-group">
+        <label>Cartella del corso *</label>
+        <div style="display: flex; gap: 0.5rem;">
+            <input type="text" id="folder_path" name="folder_path" value="<%= course.folder_path || '' %>" readonly required style="flex: 1; background-color: #222;">
+            <button type="button" id="open-folder-picker" class="btn btn-outline">Seleziona cartella</button>
+        </div>
+        <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">Relativa alla root dei corsi montata</small>
+    </div>
+
+    <!-- Copertina da Browser (Upload) -->
+    <div class="form-group" style="padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius);">
+        <label>Copertina del Corso</label>
+        
+        <div style="margin-bottom: 1rem;">
+            <strong>Opzione 1:</strong> Carica dal computer
+            <input type="file" id="cover" name="cover" accept="image/*" style="margin-top: 0.5rem;">
+        </div>
+        
+        <div style="margin-bottom: 1rem;">
+            <strong>Opzione 2:</strong> Seleziona un'immagine già presente nei corsi
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="text" id="cover_fs_path" name="cover_fs_path" value="<%= course.cover_type === 'filesystem' ? course.cover_path : '' %>" readonly placeholder="Nessuna immagine selezionata" style="flex: 1; background-color: #222;">
+                <button type="button" id="open-cover-picker" class="btn btn-outline">Sfoglia Immagini</button>
+            </div>
+        </div>
+
+        <% if (course.id && course.cover_path) { %>
+            <div style="margin-top: 1rem;">
+                <label>Copertina attuale:</label>
+                <img src="<%= getCourseCoverUrl(course) %>" style="max-width: 200px; border-radius: var(--radius); border: 1px solid var(--border);">
+            </div>
+        <% } %>
+    </div>
+    
+    <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <button type="submit" class="btn">Salva Corso</button>
+        <a href="/" class="btn btn-outline" style="margin-left: 1rem;">Annulla</a>
+    </div>
+</form>
+
+<!-- Folder Picker Modal -->
+<div id="folder-picker-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Seleziona Cartella Corso</h2>
+            <button type="button" class="close-modal" id="close-folder-picker">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
+                <button type="button" id="go-parent-folder" class="btn btn-outline">Su</button>
+                <div id="current-folder-path" style="flex: 1; font-family: monospace; padding: 0.5rem; background: var(--bg-dark); border-radius: 4px;">/courses/</div>
+            </div>
+            <div id="folder-picker-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <!-- Folders injected via JS -->
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" id="close-folder-picker-footer">Annulla</button>
+            <button type="button" class="btn" id="use-current-folder">Seleziona questa cartella</button>
+        </div>
+    </div>
+</div>
+
+<!-- Cover Picker Modal -->
+<div id="cover-picker-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Seleziona Immagine Copertina</h2>
+            <button type="button" class="close-modal" id="close-cover-picker">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center;">
+                <button type="button" id="go-parent-cover" class="btn btn-outline">Su</button>
+                <div id="current-cover-path" style="flex: 1; font-family: monospace; padding: 0.5rem; background: var(--bg-dark); border-radius: 4px;">/courses/</div>
+            </div>
+            <div id="cover-picker-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 1rem;">
+                <!-- Files/Folders injected via JS -->
+            </div>
+        </div>
+        <div class="modal-footer">
+            <span id="cover-selected-status" style="margin-right: auto; align-self: center; color: var(--primary);"></span>
+            <button type="button" class="btn btn-outline" id="close-cover-picker-footer">Annulla</button>
+            <button type="button" class="btn" id="use-selected-cover" disabled>Conferma selezione</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Isolate Folder Picker Logic
+(function() {
+    const modal = document.getElementById('folder-picker-modal');
+    const openBtn = document.getElementById('open-folder-picker');
+    const closeBtns = [document.getElementById('close-folder-picker'), document.getElementById('close-folder-picker-footer')];
+    const listEl = document.getElementById('folder-picker-list');
+    const pathEl = document.getElementById('current-folder-path');
+    const parentBtn = document.getElementById('go-parent-folder');
+    const useBtn = document.getElementById('use-current-folder');
+    const inputPath = document.getElementById('folder_path');
+    
+    let currentPath = '';
+    let parentPath = '';
+    
+    function loadFolderBrowser(path) {
+        fetch('/api/browse-folders?path=' + encodeURIComponent(path))
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Errore: ' + data.error);
+                    return;
+                }
+                
+                currentPath = data.current;
+                parentPath = data.parent;
+                
+                pathEl.textContent = '/courses/' + (currentPath ? currentPath : '');
+                
+                parentBtn.disabled = !currentPath;
+                
+                listEl.innerHTML = '';
+                if (data.folders.length === 0) {
+                    listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 1rem;">Nessuna sottocartella</div>';
+                } else {
+                    data.folders.forEach(f => {
+                        const item = document.createElement('div');
+                        item.style.padding = '0.75rem';
+                        item.style.backgroundColor = 'var(--bg-dark)';
+                        item.style.border = '1px solid var(--border)';
+                        item.style.borderRadius = 'var(--radius)';
+                        item.style.cursor = 'pointer';
+                        item.textContent = '📁 ' + f.name;
+                        
+                        item.addEventListener('mouseenter', () => item.style.backgroundColor = 'var(--bg-hover)');
+                        item.addEventListener('mouseleave', () => item.style.backgroundColor = 'var(--bg-dark)');
+                        
+                        item.addEventListener('click', () => {
+                            loadFolderBrowser(f.path);
+                        });
+                        
+                        listEl.appendChild(item);
+                    });
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Errore di comunicazione');
+            });
+    }
+    
+    openBtn.addEventListener('click', () => {
+        modal.classList.add('active');
+        // Pre-carica il path attuale se presente, altrimenti root
+        loadFolderBrowser(inputPath.value || '');
+    });
+    
+    closeBtns.forEach(btn => btn.addEventListener('click', () => {
+        modal.classList.remove('active');
+    }));
+    
+    parentBtn.addEventListener('click', () => {
+        loadFolderBrowser(parentPath);
+    });
+    
+    useBtn.addEventListener('click', () => {
+        inputPath.value = currentPath;
+        modal.classList.remove('active');
+    });
+})();
+
+// Isolate Cover Picker Logic
+(function() {
+    const modal = document.getElementById('cover-picker-modal');
+    const openBtn = document.getElementById('open-cover-picker');
+    const closeBtns = [document.getElementById('close-cover-picker'), document.getElementById('close-cover-picker-footer')];
+    const listEl = document.getElementById('cover-picker-list');
+    const pathEl = document.getElementById('current-cover-path');
+    const parentBtn = document.getElementById('go-parent-cover');
+    const useBtn = document.getElementById('use-selected-cover');
+    const statusEl = document.getElementById('cover-selected-status');
+    const inputPath = document.getElementById('cover_fs_path');
+    const folderInputPath = document.getElementById('folder_path'); // Used ONLY to hint initial directory
+    
+    let currentPath = '';
+    let parentPath = '';
+    let selectedFile = null;
+    
+    function loadFileBrowser(path) {
+        selectedFile = null;
+        useBtn.disabled = true;
+        statusEl.textContent = '';
+        
+        fetch('/api/browse-images?path=' + encodeURIComponent(path))
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Errore: ' + data.error);
+                    return;
+                }
+                
+                currentPath = data.current;
+                parentPath = data.parent;
+                
+                pathEl.textContent = '/courses/' + (currentPath ? currentPath : '');
+                parentBtn.disabled = !currentPath;
+                
+                listEl.innerHTML = '';
+                if (data.folders.length === 0 && data.images.length === 0) {
+                    listEl.innerHTML = '<div style="grid-column: 1/-1; color: var(--text-muted); text-align: center; padding: 1rem;">Nessuna cartella o immagine</div>';
+                }
+                
+                data.folders.forEach(f => {
+                    const item = document.createElement('div');
+                    item.style.padding = '1rem';
+                    item.style.backgroundColor = 'var(--bg-dark)';
+                    item.style.border = '1px solid var(--border)';
+                    item.style.borderRadius = 'var(--radius)';
+                    item.style.cursor = 'pointer';
+                    item.style.textAlign = 'center';
+                    item.innerHTML = '<div style="font-size: 2rem;">📁</div><div style="font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="'+f.name+'">' + f.name + '</div>';
+                    
+                    item.addEventListener('mouseenter', () => item.style.backgroundColor = 'var(--bg-hover)');
+                    item.addEventListener('mouseleave', () => item.style.backgroundColor = 'var(--bg-dark)');
+                    
+                    item.addEventListener('click', () => {
+                        loadFileBrowser(f.path);
+                    });
+                    
+                    listEl.appendChild(item);
+                });
+                
+                data.images.forEach(img => {
+                    const item = document.createElement('div');
+                    item.style.padding = '0.5rem';
+                    item.style.backgroundColor = 'var(--bg-dark)';
+                    item.style.border = '2px solid var(--border)';
+                    item.style.borderRadius = 'var(--radius)';
+                    item.style.cursor = 'pointer';
+                    item.style.textAlign = 'center';
+                    item.style.display = 'flex';
+                    item.style.flexDirection = 'column';
+                    item.style.alignItems = 'center';
+                    
+                    // We can use the /files route to preview images!
+                    const encodedParts = img.path.split('/').map(encodeURIComponent).join('/');
+                    const imgUrl = '/files/' + encodedParts;
+                    
+                    item.innerHTML = '<img src="' + imgUrl + '" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px; margin-bottom: 0.5rem;"><div style="font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;" title="'+img.name+'">' + img.name + '</div>';
+                    
+                    item.addEventListener('click', () => {
+                        // Deselect all others
+                        Array.from(listEl.children).forEach(c => c.style.borderColor = 'var(--border)');
+                        item.style.borderColor = 'var(--primary)';
+                        selectedFile = img.path;
+                        useBtn.disabled = false;
+                        statusEl.textContent = 'Selezionato: ' + img.name;
+                    });
+                    
+                    listEl.appendChild(item);
+                });
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Errore di comunicazione');
+            });
+    }
+    
+    openBtn.addEventListener('click', () => {
+        modal.classList.add('active');
+        // Initial path: if we have a fs path already, use its dir. 
+        // Else if course folder is set, try to use it as starting point. 
+        // Else root.
+        let initial = '';
+        if (inputPath.value) {
+            initial = inputPath.value.substring(0, inputPath.value.lastIndexOf('/'));
+        } else if (folderInputPath && folderInputPath.value) {
+            initial = folderInputPath.value;
+        }
+        loadFileBrowser(initial);
+    });
+    
+    closeBtns.forEach(btn => btn.addEventListener('click', () => {
+        modal.classList.remove('active');
+    }));
+    
+    parentBtn.addEventListener('click', () => {
+        loadFileBrowser(parentPath);
+    });
+    
+    useBtn.addEventListener('click', () => {
+        if (selectedFile) {
+            inputPath.value = selectedFile;
+            document.getElementById('cover').value = ""; // Clear file input
+        }
+        modal.classList.remove('active');
+    });
+})();
+</script>
+
+<%- include('partials/footer') %>
