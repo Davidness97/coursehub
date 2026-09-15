@@ -56,10 +56,14 @@ test('fileService - scanCourse', (t) => {
   
   // Nested mapping
   assert.strictEqual(s1.lessons.length, 1);
-  assert.strictEqual(s1.materials.length, 2); // guida.pdf + schema.jpg
+  assert.strictEqual(s1.materials.length, 1); // guida.pdf
+  assert.strictEqual(s1.children.length, 1); // approfondimenti
   
   // Deep path correctly assigned
-  const schemaItem = s1.materials.find(m => m.title === 'schema');
-  assert.ok(schemaItem);
-  assert.strictEqual(schemaItem.path_inside_section, 'approfondimenti/schema.jpg'.replace(/\\/g, '/'));
+  const childSec = s1.children[0];
+  assert.strictEqual(childSec.title, 'approfondimenti');
+  assert.strictEqual(childSec.materials.length, 1); // schema.jpg
+  
+  const schemaItem = childSec.materials[0];
+  assert.strictEqual(schemaItem.title, 'schema');
 });

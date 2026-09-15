@@ -29,21 +29,64 @@
 </div>
 
 <style>
-.section-card {
+/* ... (existing styles might be here, but I will redefine for the new layout) ... */
+.layout-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+}
+.col-lessons {
+    flex: 2;
+    min-width: 300px;
+}
+.col-materials {
+    flex: 1;
+    min-width: 300px;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    margin-bottom: 2rem;
+    padding: 1.5rem;
+    height: fit-content;
+}
+
+.accordion-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
     overflow: hidden;
 }
-.section-header {
+.accordion-header {
+    width: 100%;
+    text-align: left;
     background: rgba(255,255,255,0.02);
     padding: 1rem 1.5rem;
+    border: none;
     border-bottom: 1px solid var(--border);
+    color: var(--text-main);
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
-.section-header h3 {
-    margin: 0;
+.accordion-header:hover {
+    background: rgba(255,255,255,0.05);
 }
+.accordion-content {
+    display: none;
+}
+.accordion-content.active {
+    display: block;
+}
+.accordion-header .icon {
+    transition: transform 0.2s ease;
+}
+.accordion-header[aria-expanded="true"] .icon {
+    transform: rotate(90deg);
+}
+
 .file-list {
     list-style: none;
     margin: 0;
@@ -72,70 +115,120 @@
 .badge.completed { background: var(--success); color: #000; }
 </style>
 
-<% function renderFile(file) { %>
-    <li class="file-item">
-        <div>
-            <% if (file.fileType === 'video') { 
-                const dbLesson = dbLessonsMap.get(file.relativePath);
-                const prog = dbLesson ? progressMap[dbLesson.id] : null;
-                const completed = prog && prog.completed === 1;
-            %>
-                <span style="margin-right: 0.5rem;">🎥</span>
-                <% if (dbLesson) { %>
-                    <a href="/courses/<%= course.id %>/lessons/<%= dbLesson.id %>" style="font-weight: 500; color: var(--text-main); text-decoration: none;">
-                        <%= file.title %>
-                    </a>
-                <% } else { %>
-                    <span style="font-weight: 500; color: var(--text-main); opacity: 0.7;"><%= file.title %> (In attesa di sync)</span>
-                <% } %>
-                
-                <% if (completed) { %>
-                    <span class="badge completed" style="margin-left: 1rem;">Completato</span>
-                <% } %>
-            <% } else { %>
-                <span style="margin-right: 0.5rem;">📄</span>
-                <%
-                    const encodedPath = file.relativePath.split('/').map(encodeURIComponent).join('/');
-                %>
-                <a href="/files/<%= encodedPath %>" target="_blank" style="font-weight: 500; color: var(--text-muted); text-decoration: none;">
-                    <%= file.title %>
-                </a>
-            <% } %>
-            
-            <% if (file.path_inside_section) { %>
-                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 2rem;">
-                    <%= file.path_inside_section %>
+<div class="layout-grid">
+    <div class="col-lessons">
+        <h3 style="margin-top: 0;">Lezioni Video</h3>
+        
+        <% 
+        function countLessons(node) {
+            let count = node.lessons.length;
+            node.children.forEach(c => count += countLessons(c));
+            return count;
+        }
+        %>
+
+        <% if (rootSection.lessons.length > 0 || rootSection.children.length > 0) { 
+            const isRootActive = lastWatchedSectionId === rootSection.id;
+        %>
+            <div class="accordion-item" id="acc-<%= rootSection.id %>">
+                <button class="accordion-header" aria-expanded="<%= isRootActive ? 'true' : 'false' %>" onclick="toggleAccordion('<%= rootSection.id %>')">
+                    <span><%= rootSection.title %> <small style="color: var(--text-muted); font-weight: normal;">(<%= countLessons(rootSection) %> lezioni)</small></span>
+                    <span class="icon">▶</span>
+                </button>
+                <div class="accordion-content <%= isRootActive ? 'active' : '' %>" id="content-<%= rootSection.id %>">
+                    <%- include('partials/course_tree_node', { node: rootSection, course: course, dbLessonsMap: dbLessonsMap, progressMap: progressMap, isRootNode: true }) %>
+                </div>
+            </div>
+        <% } %>
+
+        <% sections.forEach(function(sec) { 
+            const isSecActive = lastWatchedSectionId === sec.id;
+        %>
+            <% if (countLessons(sec) > 0) { %>
+                <div class="accordion-item" id="acc-<%= sec.id %>">
+                    <button class="accordion-header" aria-expanded="<%= isSecActive ? 'true' : 'false' %>" onclick="toggleAccordion('<%= sec.id %>')">
+                        <span><%= sec.title %> <small style="color: var(--text-muted); font-weight: normal;">(<%= countLessons(sec) %> lezioni)</small></span>
+                        <span class="icon">▶</span>
+                    </button>
+                    <div class="accordion-content <%= isSecActive ? 'active' : '' %>" id="content-<%= sec.id %>">
+                        <%- include('partials/course_tree_node', { node: sec, course: course, dbLessonsMap: dbLessonsMap, progressMap: progressMap, isRootNode: true }) %>
+                    </div>
                 </div>
             <% } %>
-        </div>
-    </li>
-<% } %>
-
-<% if (rootSection.lessons.length > 0 || rootSection.materials.length > 0) { %>
-    <div class="section-card">
-        <div class="section-header">
-            <h3><%= rootSection.title %></h3>
-        </div>
-        <ul class="file-list">
-            <% rootSection.lessons.forEach(renderFile); %>
-            <% rootSection.materials.forEach(renderFile); %>
-        </ul>
+        <% }); %>
     </div>
-<% } %>
 
-<% sections.forEach(function(sec) { %>
-    <% if (sec.lessons.length > 0 || sec.materials.length > 0) { %>
-        <div class="section-card">
-            <div class="section-header">
-                <h3><%= sec.title %></h3>
+    <div class="col-materials">
+        <h3 style="margin-top: 0;">Materiale Didattico</h3>
+        
+        <% 
+        function renderMaterial(m) { 
+            const encodedPath = m.relativePath.split('/').map(encodeURIComponent).join('/');
+            return `
+            <div style="margin-bottom: 0.5rem; display: flex; align-items: flex-start; gap: 0.5rem;">
+                <span>📄</span>
+                <a href="/files/${encodedPath}" target="_blank" style="color: var(--text-muted); text-decoration: none; word-break: break-all; font-size: 0.95rem;">
+                    ${m.title}
+                </a>
+            </div>`;
+        }
+        
+        function extractMaterials(node, materialsArray) {
+            node.materials.forEach(m => materialsArray.push(m));
+            node.children.forEach(c => extractMaterials(c, materialsArray));
+        }
+        %>
+        
+        <% 
+        let hasAnyMaterial = false;
+        const rootMaterials = [];
+        extractMaterials(rootSection, rootMaterials);
+        if (rootMaterials.length > 0) {
+            hasAnyMaterial = true;
+        %>
+            <div style="margin-bottom: 1.5rem;">
+                <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--text-main);">Materiale generale</h4>
+                <div style="padding-left: 0.5rem; border-left: 2px solid var(--border);">
+                    <%- rootMaterials.map(renderMaterial).join('') %>
+                </div>
             </div>
-            <ul class="file-list">
-                <% sec.lessons.forEach(renderFile); %>
-                <% sec.materials.forEach(renderFile); %>
-            </ul>
-        </div>
-    <% } %>
-<% }); %>
+        <% } %>
+
+        <% sections.forEach(function(sec) { 
+            const secMaterials = [];
+            extractMaterials(sec, secMaterials);
+            if (secMaterials.length > 0) {
+                hasAnyMaterial = true;
+        %>
+            <div style="margin-bottom: 1.5rem;">
+                <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--text-main);"><%= sec.title %></h4>
+                <div style="padding-left: 0.5rem; border-left: 2px solid var(--border);">
+                    <%- secMaterials.map(renderMaterial).join('') %>
+                </div>
+            </div>
+        <% } }); %>
+
+        <% if (!hasAnyMaterial) { %>
+            <p style="color: var(--text-muted); font-style: italic;">Nessun materiale didattico presente in questo corso.</p>
+        <% } %>
+    </div>
+</div>
+
+<script>
+function toggleAccordion(id) {
+    const btn = document.querySelector(`#acc-${id} .accordion-header`);
+    const content = document.getElementById(`content-${id}`);
+    const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+    
+    if (isExpanded) {
+        btn.setAttribute('aria-expanded', 'false');
+        content.classList.remove('active');
+    } else {
+        btn.setAttribute('aria-expanded', 'true');
+        content.classList.add('active');
+    }
+}
+</script>
 
 <!-- Course Note Area -->
 <div class="section-card" style="margin-top: 2rem;">

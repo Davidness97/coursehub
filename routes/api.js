@@ -178,4 +178,69 @@ router.get('/browse-images', (req, res) => {
   }
 });
 
+// POST /api/download-cover (SSRF Protected & Streaming limited)
+router.post('/download-cover', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL mancante' });
+
+  try {
+    const { safeFetchUrl } = require('../services/ssrfService');
+    const response = await safeFetchUrl(url);
+
+    const contentType = response.headers['content-type'];
+    if (!contentType || !contentType.startsWith('image/')) {
+      response.destroy();
+      return res.status(400).json({ error: 'L\'URL non punta a un\'immagine valida' });
+    }
+
+    const contentLength = response.headers['content-length'];
+    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+      response.destroy();
+      return res.status(400).json({ error: 'Immagine troppo grande (limite 10MB dichiarato)' });
+    }
+
+    // Generate filename
+    const ext = contentType.split('/')[1] || 'jpg';
+    const filename = `url-cover-${Date.now()}-${Math.round(Math.random() * 1E9)}.${ext}`;
+    
+    const DATA_PATH = process.env.DATA_PATH || '/data';
+    const coversDir = path.join(DATA_PATH, 'covers');
+    if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true });
+    const filepath = path.join(coversDir, filename);
+
+    const fileStream = fs.createWriteStream(filepath);
+    
+    let downloadedBytes = 0;
+    const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+    response.on('data', (chunk) => {
+      downloadedBytes += chunk.length;
+      if (downloadedBytes > MAX_BYTES) {
+        response.destroy(new Error('Superato limite 10MB in streaming'));
+      } else {
+        fileStream.write(chunk);
+      }
+    });
+
+    response.on('end', () => {
+      fileStream.end();
+      res.json({ success: true, filename });
+    });
+
+    response.on('error', (err) => {
+      fileStream.end();
+      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      
+      if (!res.headersSent) {
+        res.status(400).json({ error: err.message });
+      }
+    });
+
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(400).json({ error: err.message || 'URL non valido o errore di rete' });
+    }
+  }
+});
+
 module.exports = router;

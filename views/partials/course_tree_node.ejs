@@ -1,0 +1,50 @@
+<%
+// Expects: node, course, dbLessonsMap, progressMap
+function renderFile(file) {
+    if (file.fileType === 'video') {
+        const dbLesson = dbLessonsMap.get(file.relativePath);
+        const prog = dbLesson ? progressMap[dbLesson.id] : null;
+        const completed = prog && prog.completed === 1;
+        %>
+        <li class="file-item">
+            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                <div>
+                    <span style="margin-right: 0.5rem;">🎥</span>
+                    <% if (dbLesson) { %>
+                        <a href="/courses/<%= course.id %>/lessons/<%= dbLesson.id %>" style="font-weight: 500; color: var(--text-main); text-decoration: none;">
+                            <%= file.title %>
+                        </a>
+                    <% } else { %>
+                        <span style="font-weight: 500; color: var(--text-main); opacity: 0.7;"><%= file.title %> (In attesa di sync)</span>
+                    <% } %>
+                    
+                    <% if (!file.compatible) { %>
+                        <span class="badge" style="margin-left: 0.5rem; background: var(--danger); color: #fff; font-size: 0.7rem;" title="Formato non supportato dal browser. Richiede player esterno.">Format Incompatibile</span>
+                    <% } %>
+                </div>
+                <div>
+                    <% if (completed) { %>
+                        <span class="badge completed">Completato</span>
+                    <% } %>
+                </div>
+            </div>
+        </li>
+        <%
+    }
+}
+%>
+
+<% if (node.lessons.length > 0 || node.children.length > 0) { %>
+    <ul class="file-list" style="<%= typeof isRootNode === 'undefined' ? 'margin-left: 1rem; border-left: 1px solid var(--border); padding-left: 1rem;' : '' %>">
+        <% node.lessons.forEach(renderFile); %>
+        
+        <% node.children.forEach(function(child) { %>
+            <li class="file-item child-folder" style="flex-direction: column; align-items: stretch; padding: 0.5rem 0;">
+                <div style="font-weight: bold; margin-bottom: 0.5rem; display: flex; align-items: center;">
+                    <span style="margin-right: 0.5rem;">📁</span> <%= child.title %>
+                </div>
+                <%- include('course_tree_node', { node: child, course: course, dbLessonsMap: dbLessonsMap, progressMap: progressMap }) %>
+            </li>
+        <% }); %>
+    </ul>
+<% } %>

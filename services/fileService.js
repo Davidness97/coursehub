@@ -32,6 +32,11 @@ function naturalSort(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+function isVideoCompatible(ext) {
+  const e = ext.toLowerCase();
+  return e === '.mp4' || e === '.webm';
+}
+
 function scanCourse(folderAbsolutePath) {
   if (!fs.existsSync(folderAbsolutePath)) {
     throw new Error(`Course directory not found: ${folderAbsolutePath}`);
@@ -45,7 +50,8 @@ function scanCourse(folderAbsolutePath) {
       title: 'Contenuti principali',
       relativePath: courseRelativePath,
       lessons: [],
-      materials: []
+      materials: [],
+      children: []
     },
     sections: [],
     allLessons: [],
@@ -61,7 +67,7 @@ function scanCourse(folderAbsolutePath) {
     const fullPath = path.join(folderAbsolutePath, entry.name);
     const relativeToRoot = toCourseRelativePath(fullPath);
     
-    if (!relativeToRoot) continue; // Out of bounds symlink, skipped safely
+    if (!relativeToRoot) continue;
 
     if (entry.isFile()) {
       const ext = path.extname(entry.name);
@@ -73,6 +79,7 @@ function scanCourse(folderAbsolutePath) {
           fileType: type,
         };
         if (type === 'video') {
+          item.compatible = isVideoCompatible(ext);
           result.rootSection.lessons.push(item);
           result.allLessons.push(item);
         } else {
@@ -81,17 +88,17 @@ function scanCourse(folderAbsolutePath) {
         }
       }
     } else if (entry.isDirectory()) {
-      // Create a section
+      // Create a top-level section
       const section = {
-        id: entry.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+        id: Buffer.from(relativeToRoot).toString('base64').replace(/[^a-zA-Z0-9]/g, ''),
         title: normalizeTitle(entry.name),
         relativePath: relativeToRoot,
         lessons: [],
         materials: [],
-        descendants: []
+        children: []
       };
       
-      // Recursively scan deep files and map them to this section
+      // Recursively scan deep files and folders
       scanDirectoryDeep(fullPath, section, result, section.relativePath);
       
       result.sections.push(section);
@@ -101,14 +108,14 @@ function scanCourse(folderAbsolutePath) {
   return result;
 }
 
-function scanDirectoryDeep(dirPath, section, result, sectionRootRelative) {
+function scanDirectoryDeep(dirPath, parentNode, result, sectionRootRelative) {
   let entries;
   try {
     entries = fs.readdirSync(dirPath, { withFileTypes: true })
       .filter(e => !isHiddenOrIgnored(e.name))
       .sort((a, b) => naturalSort(a.name, b.name));
   } catch (e) {
-    return; // E.g., permission denied, skip safely
+    return;
   }
 
   for (const entry of entries) {
@@ -121,10 +128,7 @@ function scanDirectoryDeep(dirPath, section, result, sectionRootRelative) {
       const type = getFileType(ext);
       
       if (type !== 'unknown') {
-        // path inside section calculation:
-        // relativeToRoot: Arte/01 - Fotocamera/immagini/schema.jpg
-        // sectionRootRelative: Arte/01 - Fotocamera
-        const pathInsideSection = relativeToRoot.substring(sectionRootRelative.length + 1); // +1 for the slash
+        const pathInsideSection = relativeToRoot.substring(sectionRootRelative.length + 1);
         
         const item = {
           title: normalizeTitle(entry.name),
@@ -135,17 +139,27 @@ function scanDirectoryDeep(dirPath, section, result, sectionRootRelative) {
         };
         
         if (type === 'video') {
-          section.lessons.push(item);
+          item.compatible = isVideoCompatible(ext);
+          parentNode.lessons.push(item);
           result.allLessons.push(item);
         } else {
-          section.materials.push(item);
+          parentNode.materials.push(item);
           result.allMaterials.push(item);
         }
       }
     } else if (entry.isDirectory()) {
-      // It's a descendant directory, just keep traversing
-      section.descendants.push(relativeToRoot);
-      scanDirectoryDeep(fullPath, section, result, sectionRootRelative);
+      // Create a child node
+      const childNode = {
+        id: Buffer.from(relativeToRoot).toString('base64').replace(/[^a-zA-Z0-9]/g, ''),
+        title: normalizeTitle(entry.name),
+        relativePath: relativeToRoot,
+        lessons: [],
+        materials: [],
+        children: []
+      };
+      
+      parentNode.children.push(childNode);
+      scanDirectoryDeep(fullPath, childNode, result, sectionRootRelative);
     }
   }
 }

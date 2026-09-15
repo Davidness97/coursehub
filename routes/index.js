@@ -53,29 +53,20 @@ router.get('/courses/add', (req, res) => {
 
 // Add Course Submit
 router.post('/courses/add', upload.single('cover'), (req, res) => {
-  const { title, description, folder_path } = req.body;
+  const { description, multi_folder_paths, multi_titles } = req.body;
   
-  if (!title || !folder_path) {
-    return res.render('course_form', { 
-      course: req.body, 
-      error: 'Titolo e cartella del corso sono obbligatori.' 
-    });
+  if (!multi_folder_paths || !multi_folder_paths.length) {
+    return res.render('course_form', { course: req.body, error: 'Devi selezionare almeno una cartella.' });
   }
-
-  // Validate path via pathService
-  if (!safeResolveCoursePath(folder_path)) {
-    return res.render('course_form', { 
-      course: req.body, 
-      error: 'Percorso cartella non valido o non autorizzato.' 
-    });
-  }
-
   let cover_type = null;
   let cover_path = null;
 
   if (req.file) {
     cover_type = 'uploaded';
     cover_path = req.file.filename;
+  } else if (req.body.cover_downloaded_filename) {
+    cover_type = 'uploaded';
+    cover_path = req.body.cover_downloaded_filename;
   } else if (req.body.cover_fs_path) {
     if (safeResolveCoursePath(req.body.cover_fs_path)) {
       cover_type = 'filesystem';
@@ -83,21 +74,54 @@ router.post('/courses/add', upload.single('cover'), (req, res) => {
     }
   }
 
-  try {
-    courseService.createCourse({
-      title,
-      description,
-      folder_path,
-      cover_type,
-      cover_path
-    });
-    res.redirect('/');
-  } catch (e) {
-    res.render('course_form', { 
-      course: req.body, 
-      error: 'Errore durante la creazione del corso: ' + e.message 
-    });
+
+
+  const paths = Array.isArray(multi_folder_paths) ? multi_folder_paths : [multi_folder_paths];
+  const titles = Array.isArray(multi_titles) ? multi_titles : [multi_titles];
+
+  const errors = [];
+  let addedCount = 0;
+
+  for (let i = 0; i < paths.length; i++) {
+    const fPath = paths[i];
+    const fTitle = titles[i] || fPath;
+    
+    if (!safeResolveCoursePath(fPath)) {
+      errors.push(`Percorso non valido: ${fPath}`);
+      continue;
+    }
+
+    try {
+      courseService.createCourse({
+        title: fTitle,
+        description: description || '',
+        folder_path: fPath,
+        cover_type,
+        cover_path
+      });
+      addedCount++;
+    } catch (err) {
+      errors.push(`Errore per "${fTitle}": ${err.message}`);
+    }
   }
+
+  if (errors.length > 0) {
+    if (addedCount > 0) {
+      // Partial success
+      return res.render('course_form', { 
+        course: req.body, 
+        error: `Creati ${addedCount} corsi. Errori: ` + errors.join(' | ') 
+      });
+    } else {
+      // Total failure
+      return res.render('course_form', { 
+        course: req.body, 
+        error: errors.join(' | ') 
+      });
+    }
+  }
+
+  res.redirect('/');
 });
 
 // Course View
@@ -123,6 +147,24 @@ router.get('/courses/:id', (req, res) => {
   const progressRows = db.prepare('SELECT * FROM progress WHERE lesson_id IN (SELECT id FROM lessons WHERE course_id = ?)').all(course.id);
   const progressMap = {};
   progressRows.forEach(p => progressMap[p.lesson_id] = p);
+  
+  // Find last watched section
+  let lastWatchedSectionId = null;
+  const lastWatchedProgress = db.prepare(`
+    SELECT p.lesson_id, l.section_relative_path 
+    FROM progress p
+    JOIN lessons l ON p.lesson_id = l.id
+    WHERE l.course_id = ? 
+    ORDER BY p.last_watched_at DESC LIMIT 1
+  `).get(course.id);
+  
+  if (lastWatchedProgress && lastWatchedProgress.section_relative_path) {
+     // The section.id in fileService is generated as base64 of relativeToRoot
+     lastWatchedSectionId = Buffer.from(lastWatchedProgress.section_relative_path).toString('base64').replace(/[^a-zA-Z0-9]/g, '');
+  } else {
+     // fallback to root or first section
+     lastWatchedSectionId = '__root__';
+  }
 
   const noteService = require('../services/noteService');
   const courseNote = noteService.getCourseNote(course.id);
@@ -134,6 +176,7 @@ router.get('/courses/:id', (req, res) => {
     dbLessonsMap,
     progressMap,
     courseNote,
+    lastWatchedSectionId,
     reqQuery: req.query
   });
 });
@@ -206,6 +249,9 @@ router.post('/courses/:id/edit', upload.single('cover'), (req, res) => {
   if (req.file) {
     cover_type = 'uploaded';
     cover_path = req.file.filename;
+  } else if (req.body.cover_downloaded_filename) {
+    cover_type = 'uploaded';
+    cover_path = req.body.cover_downloaded_filename;
   } else if (req.body.cover_fs_path) {
     if (safeResolveCoursePath(req.body.cover_fs_path)) {
       cover_type = 'filesystem';

@@ -9,20 +9,36 @@
 <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
     <!-- Main Content: Player & Notes -->
     <div style="flex: 1; min-width: 600px;">
-        <div style="background: #000; border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem;">
+        <div style="background: #000; border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; position: relative;">
             <%
                 const encodedPath = lesson.relative_path.split('/').map(encodeURIComponent).join('/');
+                const ext = lesson.relative_path.split('.').pop().toLowerCase();
+                const isCompatible = ext === 'mp4' || ext === 'webm';
             %>
-            <video 
-                id="lesson-video" 
-                controls 
-                style="width: 100%; display: block;" 
-                data-lesson-id="<%= lesson.id %>"
-                data-last-position="<%= progress.last_position || 0 %>"
-                data-completed="<%= progress.completed || 0 %>">
-                <source src="/files/<%= encodedPath %>" type="<%= lesson.file_type === 'video' ? 'video/mp4' : '' %>">
-                Il tuo browser non supporta il tag video.
-            </video>
+            
+            <% if (isCompatible) { %>
+                <video 
+                    id="lesson-video" 
+                    controls 
+                    style="width: 100%; display: block;" 
+                    data-lesson-id="<%= lesson.id %>"
+                    data-last-position="<%= progress.last_position || 0 %>"
+                    data-completed="<%= progress.completed || 0 %>">
+                    <source src="/files/<%= encodedPath %>" type="video/<%= ext %>">
+                    Il tuo browser non supporta il tag video.
+                </video>
+            <% } else { %>
+                <div style="padding: 4rem 2rem; text-align: center; background: #222;">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">⚠️</div>
+                    <h3 style="margin-top: 0; color: #fff;">Formato Video Incompatibile</h3>
+                    <p style="color: #aaa; max-width: 400px; margin: 0 auto 2rem auto;">
+                        Questo video non è riproducibile direttamente nel browser in quanto il formato (.<%= ext %>) non è supportato in modo nativo.
+                    </p>
+                    <a href="/files/<%= encodedPath %>" download class="btn" style="background: var(--primary);">Scarica File Originale</a>
+                </div>
+                <!-- Hidden dummy video element to keep the JS logic from crashing, though we'll adjust JS too -->
+                <video id="lesson-video" style="display: none;" data-lesson-id="<%= lesson.id %>" data-completed="<%= progress.completed || 0 %>"></video>
+            <% } %>
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">

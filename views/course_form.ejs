@@ -9,22 +9,31 @@
 <form action="<%= course.id ? '/courses/' + course.id + '/edit' : '/courses/add' %>" method="POST" enctype="multipart/form-data" style="max-width: 600px;">
     
     <div class="form-group">
-        <label for="title">Titolo *</label>
-        <input type="text" id="title" name="title" value="<%= course.title || '' %>" required>
-    </div>
-    
-    <div class="form-group">
-        <label for="description">Descrizione</label>
-        <textarea id="description" name="description" rows="3"><%= course.description || '' %></textarea>
-    </div>
-    
-    <div class="form-group">
-        <label>Cartella del corso *</label>
-        <div style="display: flex; gap: 0.5rem;">
-            <input type="text" id="folder_path" name="folder_path" value="<%= course.folder_path || '' %>" readonly required style="flex: 1; background-color: #222;">
-            <button type="button" id="open-folder-picker" class="btn btn-outline">Seleziona cartella</button>
-        </div>
-        <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">Relativa alla root dei corsi montata</small>
+        <% if (course.id) { %>
+            <!-- Single Edit Mode -->
+            <label for="title">Titolo Corso</label>
+            <input type="text" id="title" name="title" value="<%= course.title %>" required>
+            <label for="folder_path" style="margin-top: 1rem;">Cartella Corso (Relativa)</label>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="text" id="folder_path" name="folder_path" value="<%= course.folder_path %>" readonly style="flex: 1; background-color: #222;">
+                <button type="button" id="open-folder-picker" class="btn btn-outline">Sfoglia</button>
+            </div>
+            
+            <label for="description" style="margin-top: 1rem;">Descrizione (Opzionale)</label>
+            <textarea id="description" name="description" rows="3"><%= course.description %></textarea>
+        <% } else { %>
+            <!-- Multi Add Mode -->
+            <label style="margin-bottom: 0.5rem; display: block;">Seleziona Cartelle Corsi</label>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0;">Puoi selezionare una o più cartelle contemporaneamente per creare più corsi.</p>
+            <button type="button" id="open-folder-picker" class="btn btn-outline" style="margin-bottom: 1rem;">Sfoglia Cartelle</button>
+            
+            <div id="multi-select-preview" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem;">
+                <!-- Filled by JS -->
+            </div>
+            
+            <label for="description" style="margin-top: 1rem;">Descrizione Comune (Opzionale)</label>
+            <textarea id="description" name="description" rows="3" placeholder="Questa descrizione verrà applicata a tutti i corsi creati..."><%= course.description %></textarea>
+        <% } %>
     </div>
 
     <!-- Copertina da Browser (Upload) -->
@@ -43,11 +52,22 @@
                 <button type="button" id="open-cover-picker" class="btn btn-outline">Sfoglia Immagini</button>
             </div>
         </div>
+        
+        <div style="margin-bottom: 1rem;">
+            <strong>Opzione 3:</strong> Usa immagine da URL internet
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="text" id="cover_url_input" placeholder="https://esempio.com/immagine.jpg" style="flex: 1;">
+                <button type="button" id="btn-download-cover" class="btn btn-outline">Scarica e usa</button>
+            </div>
+            <div id="cover-url-status" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+            <!-- Hidden field to hold the downloaded filename so we can submit it as uploaded type -->
+            <input type="hidden" id="cover_downloaded_filename" name="cover_downloaded_filename" value="">
+        </div>
 
         <% if (course.id && course.cover_path) { %>
             <div style="margin-top: 1rem;">
                 <label>Copertina attuale:</label>
-                <img src="<%= getCourseCoverUrl(course) %>" style="max-width: 200px; border-radius: var(--radius); border: 1px solid var(--border);">
+                <img src="<%= getCourseCoverUrl(course) %>" id="current-cover-preview" style="max-width: 200px; border-radius: var(--radius); border: 1px solid var(--border);">
             </div>
         <% } %>
     </div>
@@ -311,6 +331,56 @@
             document.getElementById('cover').value = ""; // Clear file input
         }
         modal.classList.remove('active');
+    });
+})();
+
+// Cover URL Logic
+(function() {
+    const btn = document.getElementById('btn-download-cover');
+    const input = document.getElementById('cover_url_input');
+    const status = document.getElementById('cover-url-status');
+    const hiddenInput = document.getElementById('cover_downloaded_filename');
+    
+    if (!btn) return;
+    
+    btn.addEventListener('click', () => {
+        const url = input.value.trim();
+        if (!url) return;
+        
+        btn.disabled = true;
+        status.textContent = 'Scaricamento in corso...';
+        status.style.color = 'var(--text-muted)';
+        
+        fetch('/api/download-cover', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        })
+        .then(res => res.json())
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                status.textContent = 'Errore: ' + data.error;
+                status.style.color = 'var(--danger)';
+            } else if (data.success && data.filename) {
+                status.textContent = 'Immagine scaricata e impostata!';
+                status.style.color = 'var(--success)';
+                hiddenInput.value = data.filename;
+                // Clear other inputs to avoid confusion
+                document.getElementById('cover_fs_path').value = '';
+                document.getElementById('cover').value = '';
+                
+                const preview = document.getElementById('current-cover-preview');
+                if (preview) {
+                    preview.src = '/uploads/covers/' + encodeURIComponent(data.filename);
+                }
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            status.textContent = 'Errore di rete';
+            status.style.color = 'var(--danger)';
+        });
     });
 })();
 </script>
