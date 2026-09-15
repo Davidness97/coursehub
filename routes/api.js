@@ -243,4 +243,56 @@ router.post('/download-cover', async (req, res) => {
   }
 });
 
+// POST /api/search-metadata (DuckDuckGo Search)
+router.post('/search-metadata', async (req, res) => {
+  const { folder_path, query } = req.body;
+  
+  if (!folder_path && !query) {
+    return res.status(400).json({ error: 'Fornire folder_path o query' });
+  }
+
+  try {
+    const { search, searchImages, SafeSearchType } = require('duck-duck-scrape');
+    
+    // Costruisci una query di ricerca decente se fornito folder_path
+    let searchQuery = query;
+    if (!searchQuery) {
+      // Estrapola dal percorso, ad es. "Fotografia/Corso Base" -> "Fotografia Corso Base"
+      searchQuery = folder_path.replace(/[\/\\]/g, ' ').replace(/[-_]/g, ' ');
+    }
+
+    // 1. Ricerca web per descrizione
+    let description = '';
+    try {
+      const webResults = await search(searchQuery, { safeSearch: SafeSearchType.OFF });
+      if (webResults.noResults === false && webResults.results.length > 0) {
+        // Prendi la prima descrizione decente (non vuota)
+        const bestResult = webResults.results.find(r => r.description && r.description.length > 20);
+        if (bestResult) {
+          description = bestResult.description;
+        } else {
+          description = webResults.results[0].description || '';
+        }
+      }
+    } catch (e) {
+      console.warn("Errore ricerca web DDG:", e.message);
+    }
+
+    // 2. Ricerca immagini per 5 copertine
+    let images = [];
+    try {
+      const imageResults = await searchImages(searchQuery, { safeSearch: SafeSearchType.OFF });
+      if (imageResults.noResults === false && imageResults.results.length > 0) {
+        images = imageResults.results.slice(0, 5).map(img => img.image);
+      }
+    } catch (e) {
+      console.warn("Errore ricerca immagini DDG:", e.message);
+    }
+
+    res.json({ success: true, description, images, query: searchQuery });
+  } catch (err) {
+    res.status(500).json({ error: 'Errore durante la ricerca: ' + err.message });
+  }
+});
+
 module.exports = router;
