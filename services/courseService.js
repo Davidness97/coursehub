@@ -213,12 +213,6 @@ module.exports = {
   updateCourse,
   deleteCourse,
   getCourseLessons,
-  getLesson,
-  updateProgress,
-  getCourseNotes,
-  updateCourseNotes,
-  getLessonNotes,
-  updateLessonNotes,
   refreshCourse,
   syncLessons
 };

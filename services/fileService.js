@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { COURSES_ROOT, toCourseRelativePath } = require('./pathService');
+const { COURSES_ROOT, toCourseRelativePath, safeResolveCoursePath } = require('./pathService');
 
 const SUPPORTED_VIDEO = ['.mp4', '.mkv', '.webm', '.mov', '.avi'];
 const SUPPORTED_DOCS = ['.pdf', '.md', '.txt'];
@@ -38,28 +38,6 @@ function isVideoCompatible(ext) {
   const e = ext.toLowerCase();
   return e === '.mp4' || e === '.webm';
 }
-
-function scanCourse(folderAbsolutePath) {
-  if (!fs.existsSync(folderAbsolutePath)) {
-    throw new Error(`Course directory not found: ${folderAbsolutePath}`);
-  }
-
-  const courseRelativePath = toCourseRelativePath(folderAbsolutePath) || '';
-
-  const result = {
-    rootSection: {
-      id: '__root__',
-      title: 'Contenuti principali',
-      relativePath: courseRelativePath,
-      lessons: [],
-      materials: [],
-      children: []
-    },
-    sections: [],
-    allLessons: [],
-    allMaterials: []
-  };
-
 const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
