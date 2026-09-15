@@ -243,7 +243,7 @@ router.post('/download-cover', async (req, res) => {
   }
 });
 
-// POST /api/search-metadata (DuckDuckGo Search)
+// POST /api/search-metadata (Google Custom Search)
 router.post('/search-metadata', async (req, res) => {
   const { folder_path, query } = req.body;
   
@@ -251,47 +251,56 @@ router.post('/search-metadata', async (req, res) => {
     return res.status(400).json({ error: 'Fornire folder_path o query' });
   }
 
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const cx = process.env.GOOGLE_CX;
+
+  if (!apiKey || !cx) {
+    return res.status(400).json({ error: 'Per usare questa funzione devi configurare GOOGLE_API_KEY e GOOGLE_CX nel file .env' });
+  }
+
   try {
-    const { search, searchImages, SafeSearchType } = require('duck-duck-scrape');
-    
-    // Costruisci una query di ricerca decente se fornito folder_path
     let searchQuery = query;
     if (!searchQuery) {
-      // Estrapola dal percorso, ad es. "Fotografia/Corso Base" -> "Fotografia Corso Base"
       searchQuery = folder_path.replace(/[\/\\]/g, ' ').replace(/[-_]/g, ' ');
     }
 
-    // 1. Ricerca web per descrizione
     let description = '';
-    try {
-      const webResults = await search(searchQuery, { safeSearch: SafeSearchType.OFF });
-      if (webResults.noResults === false && webResults.results.length > 0) {
-        // Prendi la prima descrizione decente (non vuota)
-        const bestResult = webResults.results.find(r => r.description && r.description.length > 20);
-        if (bestResult) {
-          description = bestResult.description;
-        } else {
-          description = webResults.results[0].description || '';
-        }
-      }
-    } catch (e) {
-      console.warn("Errore ricerca web DDG:", e.message);
+    let images = [];
+
+    // 1. Ricerca testuale per descrizione
+    const textUrl = new URL('https://www.googleapis.com/customsearch/v1');
+    textUrl.searchParams.append('key', apiKey);
+    textUrl.searchParams.append('cx', cx);
+    textUrl.searchParams.append('q', searchQuery);
+
+    const textRes = await fetch(textUrl.href);
+    const textData = await textRes.json();
+
+    if (textData.error) {
+      throw new Error(textData.error.message);
     }
 
-    // 2. Ricerca immagini per 5 copertine
-    let images = [];
-    try {
-      const imageResults = await searchImages(searchQuery, { safeSearch: SafeSearchType.OFF });
-      if (imageResults.noResults === false && imageResults.results.length > 0) {
-        images = imageResults.results.slice(0, 5).map(img => img.image);
-      }
-    } catch (e) {
-      console.warn("Errore ricerca immagini DDG:", e.message);
+    if (textData.items && textData.items.length > 0) {
+      description = textData.items[0].snippet || '';
+    }
+
+    // 2. Ricerca immagini per copertine
+    const imgUrl = new URL('https://www.googleapis.com/customsearch/v1');
+    imgUrl.searchParams.append('key', apiKey);
+    imgUrl.searchParams.append('cx', cx);
+    imgUrl.searchParams.append('q', searchQuery);
+    imgUrl.searchParams.append('searchType', 'image');
+    
+    const imgRes = await fetch(imgUrl.href);
+    const imgData = await imgRes.json();
+
+    if (imgData.items && imgData.items.length > 0) {
+      images = imgData.items.slice(0, 5).map(item => item.link);
     }
 
     res.json({ success: true, description, images, query: searchQuery });
   } catch (err) {
-    res.status(500).json({ error: 'Errore durante la ricerca: ' + err.message });
+    res.status(500).json({ error: 'Errore API Google: ' + err.message });
   }
 });
 

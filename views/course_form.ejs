@@ -38,8 +38,8 @@
         <div style="margin-top: 1rem; padding: 1rem; background: rgba(0, 150, 255, 0.1); border: 1px solid rgba(0, 150, 255, 0.3); border-radius: var(--radius);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h4 style="margin: 0 0 0.5rem 0; color: #fff;">Ricerca Automatica (DuckDuckGo)</h4>
-                    <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Cerca una descrizione e copertine suggerite basate sul nome della cartella o sul titolo.</p>
+                    <h4 style="margin: 0 0 0.5rem 0; color: #fff;">Ricerca Automatica (Google Custom Search)</h4>
+                    <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Cerca una descrizione e copertine suggerite dal web.</p>
                 </div>
                 <button type="button" id="btn-ddg-search" class="btn btn-outline" style="border-color: #0096ff; color: #0096ff;">🔍 Cerca sul Web</button>
             </div>
@@ -506,7 +506,7 @@
         }
         
         btn.disabled = true;
-        status.textContent = 'Ricerca in corso su DuckDuckGo...';
+        status.textContent = 'Ricerca in corso su Google...';
         status.style.color = 'var(--text-muted)';
         proposalsContainer.style.display = 'none';
         
