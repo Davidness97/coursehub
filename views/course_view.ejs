@@ -12,10 +12,27 @@
 <div style="display: flex; gap: 2rem; margin-bottom: 2rem; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden;">
     <img src="<%= getCourseCoverUrl(course) %>" alt="Cover" style="width: 300px; object-fit: cover; background: #333;">
     <div style="padding: 2rem; flex: 1;">
-        <h2 style="margin-top: 0; font-size: 2rem;"><%= course.title %></h2>
+        <h2 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 2rem;">
+            <% if (course.category) { %>
+                <span class="category-chip" style="font-size: 0.8rem; vertical-align: middle; margin-right: 0.5rem; margin-bottom: 0.2rem;"><%= course.category %></span>
+            <% } %>
+            <%= course.title %>
+        </h2>
         <% if (course.description) { %>
             <p style="color: var(--text-muted); font-size: 1.1rem;"><%= course.description %></p>
         <% } %>
+        <div style="margin-top: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                <span>Durata Totale: <strong><%= formatDuration(course.total_duration_seconds) %></strong></span>
+                <span>Completato: <strong><%= course.progress_pct %>%</strong></span>
+            </div>
+            <% if (course.total_duration_seconds > 0) { %>
+                <div style="height: 8px; background: var(--bg-dark); border-radius: 4px; overflow: hidden; border: 1px solid var(--border);">
+                    <div style="height: 100%; background: var(--success); width: <%= course.progress_pct %>%;"></div>
+                </div>
+            <% } %>
+        </div>
+        
         <div style="margin-top: 2rem; display: flex; gap: 1rem;">
             <a href="/courses/<%= course.id %>/edit" class="btn btn-outline">Modifica Corso</a>
             <form action="/courses/<%= course.id %>/refresh" method="POST" style="margin: 0;">

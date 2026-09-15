@@ -23,14 +23,18 @@ const upload = multer({ storage: storage });
 
 // Home / Library
 router.get('/', (req, res) => {
-  const courses = courseService.getAllCourses();
+  const { search, category, sort } = req.query;
+  const courses = courseService.getAllCourses({ search, category, sort });
+  const allCategories = courseService.getCategories();
   
   // Enrich with basic progress
   for (const course of courses) {
     const stats = db.prepare(`
       SELECT 
         COUNT(l.id) as total_lessons,
-        SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) as completed_lessons
+        SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) as completed_lessons,
+        SUM(p.watched_seconds) as watched_seconds,
+        SUM(l.duration) as total_seconds
       FROM lessons l
       LEFT JOIN progress p ON l.id = p.lesson_id
       WHERE l.course_id = ? AND l.file_type = 'video' AND l.is_missing = 0
@@ -38,25 +42,47 @@ router.get('/', (req, res) => {
     
     course.total_lessons = stats.total_lessons;
     course.completed_lessons = stats.completed_lessons;
-    course.progress_pct = stats.total_lessons > 0 
-      ? Math.round((stats.completed_lessons / stats.total_lessons) * 100) 
-      : null;
+    course.watched_seconds = stats.watched_seconds || 0;
+    
+    // Percentuale basata sul tempo guardato se la durata totale > 0, altrimenti basata sui video completati come fallback
+    if (course.total_duration_seconds > 0) {
+       course.progress_pct = Math.round((course.watched_seconds / course.total_duration_seconds) * 100);
+       if (course.progress_pct > 100) course.progress_pct = 100;
+    } else {
+       course.progress_pct = stats.total_lessons > 0 
+         ? Math.round((stats.completed_lessons / stats.total_lessons) * 100) 
+         : null;
+    }
   }
   
-  res.render('index', { courses });
+  res.render('index', { 
+    courses, 
+    categories: allCategories, 
+    query: { search: search || '', category: category || '', sort: sort || '' }
+  });
 });
 
 // Add Course Form
 router.get('/courses/add', (req, res) => {
-  res.render('course_form', { course: {}, error: null });
+  const allCategories = courseService.getCategories();
+  res.render('course_form', { course: {}, categories: allCategories, error: null });
+});
+
+// Edit Course Form
+router.get('/courses/edit/:id', (req, res) => {
+  const course = courseService.getCourse(req.params.id);
+  if (!course) return res.status(404).send('Corso non trovato');
+  const allCategories = courseService.getCategories();
+  res.render('course_form', { course, categories: allCategories, error: null });
 });
 
 // Add Course Submit
-router.post('/courses/add', upload.single('cover'), (req, res) => {
-  const { description, multi_folder_paths, multi_titles } = req.body;
+router.post('/courses/add', upload.single('cover'), async (req, res) => {
+  const { description, category, multi_folder_paths, multi_titles } = req.body;
+  const allCategories = courseService.getCategories();
   
   if (!multi_folder_paths || !multi_folder_paths.length) {
-    return res.render('course_form', { course: req.body, error: 'Devi selezionare almeno una cartella.' });
+    return res.render('course_form', { course: req.body, categories: allCategories, error: 'Devi selezionare almeno una cartella.' });
   }
   let cover_type = null;
   let cover_path = null;
@@ -74,8 +100,6 @@ router.post('/courses/add', upload.single('cover'), (req, res) => {
     }
   }
 
-
-
   const paths = Array.isArray(multi_folder_paths) ? multi_folder_paths : [multi_folder_paths];
   const titles = Array.isArray(multi_titles) ? multi_titles : [multi_titles];
 
@@ -92,9 +116,10 @@ router.post('/courses/add', upload.single('cover'), (req, res) => {
     }
 
     try {
-      courseService.createCourse({
+      await courseService.createCourse({
         title: fTitle,
         description: description || '',
+        category: category || '',
         folder_path: fPath,
         cover_type,
         cover_path
@@ -110,12 +135,14 @@ router.post('/courses/add', upload.single('cover'), (req, res) => {
       // Partial success
       return res.render('course_form', { 
         course: req.body, 
+        categories: allCategories,
         error: `Creati ${addedCount} corsi. Errori: ` + errors.join(' | ') 
       });
     } else {
       // Total failure
       return res.render('course_form', { 
         course: req.body, 
+        categories: allCategories,
         error: errors.join(' | ') 
       });
     }
@@ -125,7 +152,7 @@ router.post('/courses/add', upload.single('cover'), (req, res) => {
 });
 
 // Course View
-router.get('/courses/:id', (req, res) => {
+router.get('/courses/:id', async (req, res) => {
   const course = courseService.getCourse(req.params.id);
   if (!course) return res.status(404).send('Corso non trovato');
   
@@ -133,7 +160,7 @@ router.get('/courses/:id', (req, res) => {
   try {
     const absolutePath = safeResolveCoursePath(course.folder_path);
     if (!absolutePath) throw new Error('Path non valido');
-    scanResult = require('../services/fileService').scanCourse(absolutePath);
+    scanResult = await require('../services/fileService').scanCourse(absolutePath);
   } catch (e) {
     return res.status(500).send('Impossibile scansionare il corso: ' + e.message);
   }
@@ -146,7 +173,19 @@ router.get('/courses/:id', (req, res) => {
   // Progress
   const progressRows = db.prepare('SELECT * FROM progress WHERE lesson_id IN (SELECT id FROM lessons WHERE course_id = ?)').all(course.id);
   const progressMap = {};
-  progressRows.forEach(p => progressMap[p.lesson_id] = p);
+  let watched_seconds = 0;
+  progressRows.forEach(p => {
+    progressMap[p.lesson_id] = p;
+    watched_seconds += p.watched_seconds || 0;
+  });
+  
+  course.watched_seconds = watched_seconds;
+  if (course.total_duration_seconds > 0) {
+    course.progress_pct = Math.round((course.watched_seconds / course.total_duration_seconds) * 100);
+    if (course.progress_pct > 100) course.progress_pct = 100;
+  } else {
+    course.progress_pct = 0;
+  }
   
   // Find last watched section
   let lastWatchedSectionId = null;
@@ -226,21 +265,23 @@ router.get('/courses/:courseId/lessons/:lessonId', (req, res) => {
 router.get('/courses/:id/edit', (req, res) => {
   const course = courseService.getCourse(req.params.id);
   if (!course) return res.status(404).send('Corso non trovato');
-  res.render('course_form', { course, error: null });
+  const allCategories = courseService.getCategories();
+  res.render('course_form', { course, categories: allCategories, error: null });
 });
 
 // Edit Course Submit
-router.post('/courses/:id/edit', upload.single('cover'), (req, res) => {
+router.post('/courses/:id/edit', upload.single('cover'), async (req, res) => {
   const course = courseService.getCourse(req.params.id);
+  const allCategories = courseService.getCategories();
   if (!course) return res.status(404).send('Corso non trovato');
 
-  const { title, description, folder_path } = req.body;
+  const { title, description, category, folder_path } = req.body;
   if (!title || !folder_path) {
-    return res.render('course_form', { course: { ...course, ...req.body }, error: 'Titolo e cartella sono obbligatori.' });
+    return res.render('course_form', { course: { ...course, ...req.body }, categories: allCategories, error: 'Titolo e cartella sono obbligatori.' });
   }
 
   if (!safeResolveCoursePath(folder_path)) {
-    return res.render('course_form', { course: { ...course, ...req.body }, error: 'Percorso non autorizzato.' });
+    return res.render('course_form', { course: { ...course, ...req.body }, categories: allCategories, error: 'Percorso non autorizzato.' });
   }
 
   let cover_type = course.cover_type;
@@ -261,23 +302,23 @@ router.post('/courses/:id/edit', upload.single('cover'), (req, res) => {
   
   try {
     courseService.updateCourse(course.id, {
-      title, description, folder_path, cover_type, cover_path
+      title, description, category, folder_path, cover_type, cover_path
     });
     // Trigger un refresh morbido
-    courseService.refreshCourse(course.id);
+    await courseService.refreshCourse(course.id);
     res.redirect('/courses/' + course.id);
   } catch (e) {
-    res.render('course_form', { course: { ...course, ...req.body }, error: 'Errore: ' + e.message });
+    res.render('course_form', { course: { ...course, ...req.body }, categories: allCategories, error: 'Errore: ' + e.message });
   }
 });
 
 // Refresh Content
-router.post('/courses/:id/refresh', (req, res) => {
+router.post('/courses/:id/refresh', async (req, res) => {
   const course = courseService.getCourse(req.params.id);
   if (!course) return res.status(404).send('Corso non trovato');
   
   try {
-    const result = courseService.refreshCourse(course.id);
+    const result = await courseService.refreshCourse(course.id);
     // Passing success feedback could be done via session/flash, but for now we'll just redirect
     res.redirect('/courses/' + course.id + '?refreshed=1&added=' + result.added + '&updated=' + result.updated + '&reactivated=' + result.reactivated);
   } catch(e) {

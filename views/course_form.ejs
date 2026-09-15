@@ -21,6 +21,9 @@
             
             <label for="description" style="margin-top: 1rem;">Descrizione (Opzionale)</label>
             <textarea id="description" name="description" rows="3"><%= course.description %></textarea>
+            
+            <label for="category" style="margin-top: 1rem;">Categoria (Opzionale)</label>
+            <input type="text" id="category" name="category" list="categories-list" value="<%= course.category || '' %>" placeholder="Es. Programmazione, Fotografia...">
         <% } else { %>
             <!-- Multi Add Mode -->
             <label style="margin-bottom: 0.5rem; display: block;">Seleziona Cartelle Corsi</label>
@@ -33,7 +36,18 @@
             
             <label for="description" style="margin-top: 1rem;">Descrizione Comune (Opzionale)</label>
             <textarea id="description" name="description" rows="3" placeholder="Questa descrizione verrà applicata a tutti i corsi creati..."><%= course.description %></textarea>
+            
+            <label for="category" style="margin-top: 1rem;">Categoria Comune (Opzionale)</label>
+            <input type="text" id="category" name="category" list="categories-list" value="<%= course.category || '' %>" placeholder="Verrà applicata a tutti i corsi creati...">
         <% } %>
+        
+        <datalist id="categories-list">
+            <% if (categories && categories.length > 0) { %>
+                <% categories.forEach(cat => { %>
+                    <option value="<%= cat %>">
+                <% }) %>
+            <% } %>
+        </datalist>
         
         <div style="margin-top: 1rem; padding: 1rem; background: rgba(0, 150, 255, 0.1); border: 1px solid rgba(0, 150, 255, 0.3); border-radius: var(--radius);">
             <div style="display: flex; justify-content: space-between; align-items: center;">

@@ -74,7 +74,71 @@
 .course-actions .btn {
     flex: 1;
 }
+
+.filters-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding: 1rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    align-items: center;
+}
+
+.filters-bar input, .filters-bar select {
+    padding: 0.5rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    border-radius: var(--radius);
+}
+
+.category-chip {
+    display: inline-block;
+    background: var(--primary);
+    color: white;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+}
 </style>
+
+<div class="filters-bar">
+    <form action="/" method="GET" style="display: flex; gap: 1rem; width: 100%; flex-wrap: wrap; align-items: center; margin: 0;">
+        <div style="flex: 1; min-width: 200px;">
+            <input type="text" name="search" placeholder="Cerca corsi per titolo..." value="<%= query.search %>" style="width: 100%;">
+        </div>
+        
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label for="category" style="margin: 0; font-size: 0.9rem;">Categoria:</label>
+            <select name="category" id="category">
+                <option value="">Tutte</option>
+                <% categories.forEach(cat => { %>
+                    <option value="<%= cat %>" <%= query.category === cat ? 'selected' : '' %>><%= cat %></option>
+                <% }) %>
+            </select>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label for="sort" style="margin: 0; font-size: 0.9rem;">Ordina:</label>
+            <select name="sort" id="sort">
+                <option value="date_desc" <%= query.sort === 'date_desc' || !query.sort ? 'selected' : '' %>>Recenti prima</option>
+                <option value="alpha_asc" <%= query.sort === 'alpha_asc' ? 'selected' : '' %>>Alfabetico (A-Z)</option>
+                <option value="duration_desc" <%= query.sort === 'duration_desc' ? 'selected' : '' %>>Più lunghi</option>
+                <option value="duration_asc" <%= query.sort === 'duration_asc' ? 'selected' : '' %>>Più corti</option>
+            </select>
+        </div>
+        
+        <button type="submit" class="btn" style="padding: 0.5rem 1rem;">Filtra</button>
+        <% if (query.search || query.category || query.sort) { %>
+            <a href="/" class="btn btn-outline" style="padding: 0.5rem 1rem;">Reset</a>
+        <% } %>
+    </form>
+</div>
 
 <% if (courses.length === 0) { %>
     <div style="text-align: center; padding: 4rem 2rem; background: var(--bg-card); border-radius: var(--radius); border: 1px dashed var(--border);">
@@ -88,13 +152,18 @@
             <div class="course-card">
                 <img src="<%= getCourseCoverUrl(course) %>" alt="Cover" class="course-cover">
                 <div class="course-content">
-                    <h3 class="course-title"><%= course.title %></h3>
+                    <h3 class="course-title">
+                        <% if (course.category) { %>
+                            <span class="category-chip"><%= course.category %></span><br>
+                        <% } %>
+                        <%= course.title %>
+                    </h3>
                     <% if (course.description) { %>
                         <p class="course-desc"><%= course.description %></p>
                     <% } %>
                     
                     <div class="course-meta">
-                        <span><%= course.total_lessons || 0 %> lezioni video</span>
+                        <span><%= course.total_lessons || 0 %> lezioni (<%= formatDuration(course.total_duration_seconds) %>)</span>
                         <span>
                             <% if (course.progress_pct === null) { %>
                                 Non iniziato

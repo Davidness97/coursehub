@@ -81,6 +81,15 @@ function initDb() {
       FOREIGN KEY(lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
     );
   `);
+
+  // Migrations
+  try {
+    db.exec(`ALTER TABLE courses ADD COLUMN category TEXT DEFAULT '';`);
+  } catch (e) { /* Colonna già esistente */ }
+  
+  try {
+    db.exec(`ALTER TABLE lessons ADD COLUMN duration REAL DEFAULT 0;`);
+  } catch (e) { /* Colonna già esistente */ }
 }
 
 initDb();

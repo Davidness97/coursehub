@@ -18,13 +18,18 @@ app.locals.getCourseCoverUrl = function(course) {
   if (!course || !course.cover_type || !course.cover_path) return '/img/placeholder.jpg';
   if (course.cover_type === 'uploaded') {
     return `/uploads/covers/${encodeURIComponent(path.basename(course.cover_path))}`;
-  }
-  if (course.cover_type === 'filesystem') {
-    // We only encode the path parts, keeping slashes
-    const encoded = course.cover_path.split('/').map(encodeURIComponent).join('/');
-    return `/files/${encoded}`;
+  } else if (course.cover_type === 'filesystem') {
+    return `/api/cover/fs?path=${encodeURIComponent(course.cover_path)}`;
   }
   return '/img/placeholder.jpg';
+};
+
+app.locals.formatDuration = function(seconds) {
+  if (!seconds || seconds <= 0) return '0 min';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h e ${m}min`;
+  return `${m} min`;
 };
 
 // Routes

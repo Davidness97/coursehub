@@ -29,7 +29,9 @@ function normalizeTitle(filename) {
 }
 
 function naturalSort(a, b) {
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    const nameA = path.parse(a).name;
+    const nameB = path.parse(b).name;
+    return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 function isVideoCompatible(ext) {
@@ -58,13 +60,50 @@ function scanCourse(folderAbsolutePath) {
     allMaterials: []
   };
 
-  const entries = fs.readdirSync(folderAbsolutePath, { withFileTypes: true })
-    .filter(e => !isHiddenOrIgnored(e.name))
-    .sort((a, b) => naturalSort(a.name, b.name));
+const { execFile } = require('child_process');
+const util = require('util');
+const execFileAsync = util.promisify(execFile);
+
+// Helper function per estrarre la durata con ffprobe in modo asincrono
+async function getVideoDuration(absolutePath) {
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      absolutePath
+    ], { timeout: 5000 });
+    const duration = parseFloat(stdout);
+    return isNaN(duration) ? 0 : duration;
+  } catch (e) {
+    return 0; // ffprobe mancante o fallito
+  }
+}
+
+async function scanCourse(coursePath) {
+  const absolutePath = safeResolveCoursePath(coursePath);
+  
+  const result = {
+    rootSection: { lessons: [], materials: [], children: [] },
+    sections: [], // Flat list of all created sections
+    allLessons: [], // Flat list of all lessons
+    allMaterials: [] // Flat list of all materials
+  };
+
+  if (!absolutePath) return result;
+  
+  let entries;
+  try {
+    entries = fs.readdirSync(absolutePath, { withFileTypes: true })
+      .filter(e => !isHiddenOrIgnored(e.name))
+      .sort((a, b) => naturalSort(a.name, b.name));
+  } catch(e) {
+    return result;
+  }
 
   // First pass: Root files and Section folders
   for (const entry of entries) {
-    const fullPath = path.join(folderAbsolutePath, entry.name);
+    const fullPath = path.join(absolutePath, entry.name);
     const relativeToRoot = toCourseRelativePath(fullPath);
     
     if (!relativeToRoot) continue;
@@ -80,6 +119,7 @@ function scanCourse(folderAbsolutePath) {
         };
         if (type === 'video') {
           item.compatible = isVideoCompatible(ext);
+          item.duration = await getVideoDuration(fullPath);
           result.rootSection.lessons.push(item);
           result.allLessons.push(item);
         } else {
@@ -99,7 +139,7 @@ function scanCourse(folderAbsolutePath) {
       };
       
       // Recursively scan deep files and folders
-      scanDirectoryDeep(fullPath, section, result, section.relativePath);
+      await scanDirectoryDeep(fullPath, section, result, section.relativePath);
       
       result.sections.push(section);
     }
@@ -108,7 +148,7 @@ function scanCourse(folderAbsolutePath) {
   return result;
 }
 
-function scanDirectoryDeep(dirPath, parentNode, result, sectionRootRelative) {
+async function scanDirectoryDeep(dirPath, parentNode, result, sectionRootRelative) {
   let entries;
   try {
     entries = fs.readdirSync(dirPath, { withFileTypes: true })
@@ -140,6 +180,7 @@ function scanDirectoryDeep(dirPath, parentNode, result, sectionRootRelative) {
         
         if (type === 'video') {
           item.compatible = isVideoCompatible(ext);
+          item.duration = await getVideoDuration(fullPath);
           parentNode.lessons.push(item);
           result.allLessons.push(item);
         } else {
@@ -159,7 +200,7 @@ function scanDirectoryDeep(dirPath, parentNode, result, sectionRootRelative) {
       };
       
       parentNode.children.push(childNode);
-      scanDirectoryDeep(fullPath, childNode, result, sectionRootRelative);
+      await scanDirectoryDeep(fullPath, childNode, result, sectionRootRelative);
     }
   }
 }

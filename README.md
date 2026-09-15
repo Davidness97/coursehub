@@ -1,8 +1,5 @@
 # CourseHub
 
-<img width="600" height="600" alt="CourseHubICO" src="https://github.com/user-attachments/assets/2ad84e62-52bf-4985-a19c-7770ca2dabfd" />
-
-
 CourseHub è una web application self-hosted e containerizzata per organizzare e seguire corsi personali presenti in cartelle locali o su NAS.
 
 ## Installazione
