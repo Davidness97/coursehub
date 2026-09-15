@@ -128,8 +128,11 @@
 <script>
 // Isolate Folder Picker Logic
 (function() {
+    const isEditMode = <%= !!course.id %>;
     const modal = document.getElementById('folder-picker-modal');
     const openBtn = document.getElementById('open-folder-picker');
+    if (!openBtn) return;
+    
     const closeBtns = [document.getElementById('close-folder-picker'), document.getElementById('close-folder-picker-footer')];
     const listEl = document.getElementById('folder-picker-list');
     const pathEl = document.getElementById('current-folder-path');
@@ -140,7 +143,45 @@
     let currentPath = '';
     let parentPath = '';
     
+    // For Add Mode: Track multiple selected paths
+    const selectedPaths = new Set();
+    
+    function renderMultiSelectUI() {
+        if (isEditMode) return;
+        const container = document.getElementById('multi-select-preview');
+        if (!container) return;
+        
+        if (selectedPaths.size === 0) {
+            container.innerHTML = '<p style="color: var(--text-muted); font-style: italic;">Nessuna cartella selezionata.</p>';
+            return;
+        }
+        
+        let html = '<div style="display: flex; flex-direction: column; gap: 0.5rem;">';
+        selectedPaths.forEach(path => {
+            const defaultTitle = path.split('/').pop().replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            html += `
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="hidden" name="multi_folder_paths[]" value="${path}">
+                <input type="text" name="multi_titles[]" value="${defaultTitle}" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-dark);" required>
+                <code style="background: var(--bg-dark); padding: 0.5rem; font-size: 0.8rem; border-radius: 4px;">${path}</code>
+                <button type="button" class="btn btn-outline btn-remove-path" data-path="${path}" style="border-color: var(--danger); color: var(--danger); padding: 0.5rem;">&times;</button>
+            </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+        
+        container.querySelectorAll('.btn-remove-path').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                selectedPaths.delete(e.target.dataset.path);
+                renderMultiSelectUI();
+            });
+        });
+    }
+
     function loadFolderBrowser(path) {
+        if (isEditMode) useBtn.disabled = true;
+        
         fetch('/api/browse-folders?path=' + encodeURIComponent(path))
             .then(res => res.json())
             .then(data => {
@@ -153,32 +194,53 @@
                 parentPath = data.parent;
                 
                 pathEl.textContent = '/courses/' + (currentPath ? currentPath : '');
-                
                 parentBtn.disabled = !currentPath;
+                if (isEditMode) useBtn.disabled = !currentPath;
                 
                 listEl.innerHTML = '';
                 if (data.folders.length === 0) {
                     listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 1rem;">Nessuna sottocartella</div>';
-                } else {
-                    data.folders.forEach(f => {
-                        const item = document.createElement('div');
-                        item.style.padding = '0.75rem';
-                        item.style.backgroundColor = 'var(--bg-dark)';
-                        item.style.border = '1px solid var(--border)';
-                        item.style.borderRadius = 'var(--radius)';
-                        item.style.cursor = 'pointer';
-                        item.textContent = '📁 ' + f.name;
-                        
-                        item.addEventListener('mouseenter', () => item.style.backgroundColor = 'var(--bg-hover)');
-                        item.addEventListener('mouseleave', () => item.style.backgroundColor = 'var(--bg-dark)');
-                        
-                        item.addEventListener('click', () => {
-                            loadFolderBrowser(f.path);
-                        });
-                        
-                        listEl.appendChild(item);
-                    });
                 }
+                
+                data.folders.forEach(f => {
+                    const item = document.createElement('div');
+                    item.style.padding = '1rem';
+                    item.style.backgroundColor = 'var(--bg-dark)';
+                    item.style.border = '1px solid var(--border)';
+                    item.style.borderRadius = 'var(--radius)';
+                    item.style.cursor = 'pointer';
+                    item.style.display = 'flex';
+                    item.style.alignItems = 'center';
+                    
+                    let contentHtml = `<div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
+                        <span style="font-size: 1.5rem;">📁</span>
+                        <span>${f.name}</span>
+                    </div>`;
+                    
+                    if (!isEditMode) {
+                        const isChecked = selectedPaths.has(f.path) ? 'checked' : '';
+                        contentHtml = `<input type="checkbox" class="folder-checkbox" data-path="${f.path}" ${isChecked} style="margin-right: 1rem; width: 20px; height: 20px; cursor: pointer;">` + contentHtml;
+                    }
+                    
+                    item.innerHTML = contentHtml;
+                    
+                    item.addEventListener('mouseenter', () => item.style.backgroundColor = 'var(--bg-hover)');
+                    item.addEventListener('mouseleave', () => item.style.backgroundColor = 'var(--bg-dark)');
+                    
+                    if (isEditMode) {
+                        item.addEventListener('click', () => loadFolderBrowser(f.path));
+                    } else {
+                        // In Add Mode, clicking the text goes inside. Clicking the checkbox selects it.
+                        const cb = item.querySelector('.folder-checkbox');
+                        cb.addEventListener('change', (e) => {
+                            if (e.target.checked) selectedPaths.add(f.path);
+                            else selectedPaths.delete(f.path);
+                        });
+                        item.querySelector('div').addEventListener('click', () => loadFolderBrowser(f.path));
+                    }
+                    
+                    listEl.appendChild(item);
+                });
             })
             .catch(err => {
                 console.error(err);
@@ -188,12 +250,16 @@
     
     openBtn.addEventListener('click', () => {
         modal.classList.add('active');
-        // Pre-carica il path attuale se presente, altrimenti root
-        loadFolderBrowser(inputPath.value || '');
+        let initial = currentPath;
+        if (isEditMode && inputPath && inputPath.value) {
+            initial = inputPath.value;
+        }
+        loadFolderBrowser(initial);
     });
     
     closeBtns.forEach(btn => btn.addEventListener('click', () => {
         modal.classList.remove('active');
+        if (!isEditMode) renderMultiSelectUI();
     }));
     
     parentBtn.addEventListener('click', () => {
@@ -201,9 +267,16 @@
     });
     
     useBtn.addEventListener('click', () => {
-        inputPath.value = currentPath;
+        if (isEditMode) {
+            if (inputPath) inputPath.value = currentPath;
+        } else {
+            renderMultiSelectUI();
+        }
         modal.classList.remove('active');
     });
+    
+    // Init Multi Select UI if Add Mode
+    if (!isEditMode) renderMultiSelectUI();
 })();
 
 // Isolate Cover Picker Logic
