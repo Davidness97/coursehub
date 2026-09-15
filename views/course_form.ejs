@@ -34,6 +34,24 @@
             <label for="description" style="margin-top: 1rem;">Descrizione Comune (Opzionale)</label>
             <textarea id="description" name="description" rows="3" placeholder="Questa descrizione verrà applicata a tutti i corsi creati..."><%= course.description %></textarea>
         <% } %>
+        
+        <div style="margin-top: 1rem; padding: 1rem; background: rgba(0, 150, 255, 0.1); border: 1px solid rgba(0, 150, 255, 0.3); border-radius: var(--radius);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h4 style="margin: 0 0 0.5rem 0; color: #fff;">Ricerca Automatica (DuckDuckGo)</h4>
+                    <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Cerca una descrizione e copertine suggerite basate sul nome della cartella o sul titolo.</p>
+                </div>
+                <button type="button" id="btn-ddg-search" class="btn btn-outline" style="border-color: #0096ff; color: #0096ff;">🔍 Cerca sul Web</button>
+            </div>
+            <div id="ddg-search-status" style="font-size: 0.85rem; margin-top: 0.5rem;"></div>
+            
+            <div id="ddg-image-proposals" style="display: none; margin-top: 1rem;">
+                <h5 style="margin: 0 0 0.5rem 0;">Seleziona una Copertina:</h5>
+                <div id="ddg-image-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.5rem;">
+                    <!-- Images injected here -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Copertina da Browser (Upload) -->
@@ -447,6 +465,115 @@
                 if (preview) {
                     preview.src = '/uploads/covers/' + encodeURIComponent(data.filename);
                 }
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            status.textContent = 'Errore di rete';
+            status.style.color = 'var(--danger)';
+        });
+    });
+})();
+
+// DuckDuckGo Search Logic
+(function() {
+    const btn = document.getElementById('btn-ddg-search');
+    const status = document.getElementById('ddg-search-status');
+    const proposalsContainer = document.getElementById('ddg-image-proposals');
+    const grid = document.getElementById('ddg-image-grid');
+    
+    if (!btn) return;
+    
+    btn.addEventListener('click', () => {
+        let query = '';
+        const isEditMode = <%= !!course.id %>;
+        
+        if (isEditMode) {
+            query = document.getElementById('title').value;
+        } else {
+            // Pick the first folder path or title in multi mode
+            const firstTitleInput = document.querySelector('input[name="multi_titles[]"]');
+            const firstPathInput = document.querySelector('input[name="multi_folder_paths[]"]');
+            
+            if (firstTitleInput && firstTitleInput.value) query = firstTitleInput.value;
+            else if (firstPathInput && firstPathInput.value) query = firstPathInput.value;
+        }
+        
+        if (!query) {
+            status.textContent = 'Errore: Inserisci un titolo o seleziona una cartella per cercare.';
+            status.style.color = 'var(--danger)';
+            return;
+        }
+        
+        btn.disabled = true;
+        status.textContent = 'Ricerca in corso su DuckDuckGo...';
+        status.style.color = 'var(--text-muted)';
+        proposalsContainer.style.display = 'none';
+        
+        fetch('/api/search-metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        })
+        .then(res => res.json())
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) {
+                status.textContent = 'Errore: ' + data.error;
+                status.style.color = 'var(--danger)';
+                return;
+            }
+            
+            status.textContent = `Trovato per "${data.query}".`;
+            status.style.color = 'var(--success)';
+            
+            if (data.description) {
+                document.getElementById('description').value = data.description;
+            }
+            
+            if (data.images && data.images.length > 0) {
+                proposalsContainer.style.display = 'block';
+                grid.innerHTML = '';
+                
+                data.images.forEach(imgUrl => {
+                    const wrap = document.createElement('div');
+                    wrap.style.cursor = 'pointer';
+                    wrap.style.border = '2px solid transparent';
+                    wrap.style.borderRadius = 'var(--radius)';
+                    wrap.style.overflow = 'hidden';
+                    wrap.style.height = '75px';
+                    
+                    const img = document.createElement('img');
+                    img.src = imgUrl;
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'cover';
+                    
+                    wrap.appendChild(img);
+                    
+                    wrap.addEventListener('mouseenter', () => wrap.style.borderColor = 'rgba(255,255,255,0.5)');
+                    wrap.addEventListener('mouseleave', () => wrap.style.borderColor = 'transparent');
+                    
+                    wrap.addEventListener('click', () => {
+                        // Evidenzia selezione
+                        Array.from(grid.children).forEach(c => c.style.borderColor = 'transparent');
+                        wrap.style.borderColor = 'var(--primary)';
+                        
+                        // Compila campo URL e avvia il download SSRF
+                        const urlInput = document.getElementById('cover_url_input');
+                        if (urlInput) {
+                            urlInput.value = imgUrl;
+                            const dlBtn = document.getElementById('btn-download-cover');
+                            if (dlBtn) {
+                                dlBtn.click();
+                            }
+                        }
+                    });
+                    
+                    grid.appendChild(wrap);
+                });
+            } else {
+                status.textContent += ' Nessuna immagine trovata.';
             }
         })
         .catch(err => {
