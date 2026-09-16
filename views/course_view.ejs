@@ -23,14 +23,12 @@
         <% } %>
         <div style="margin-top: 1.5rem;">
             <div style="display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-                <span>Durata Totale: <strong><%= formatDuration(course.total_duration_seconds) %></strong></span>
-                <span>Completato: <strong><%= course.progress_pct %>%</strong></span>
+                <span>Durata Totale: <strong><%= course.total_duration_seconds > 0 ? formatDuration(course.total_duration_seconds) : 'In attesa di scansione' %></strong></span>
+                <span>Completato: <strong><%= course.progress_pct || 0 %>%</strong></span>
             </div>
-            <% if (course.total_duration_seconds > 0) { %>
-                <div style="height: 8px; background: var(--bg-dark); border-radius: 4px; overflow: hidden; border: 1px solid var(--border);">
-                    <div style="height: 100%; background: var(--success); width: <%= course.progress_pct %>%;"></div>
-                </div>
-            <% } %>
+            <div style="height: 8px; background: var(--bg-dark); border-radius: 4px; overflow: hidden; border: 1px solid var(--border);">
+                <div style="height: 100%; background: var(--success); width: <%= course.progress_pct || 0 %>%;"></div>
+            </div>
         </div>
         
         <div style="margin-top: 2rem; display: flex; gap: 1rem;">

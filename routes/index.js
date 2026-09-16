@@ -173,18 +173,32 @@ router.get('/courses/:id', async (req, res) => {
   // Progress
   const progressRows = db.prepare('SELECT * FROM progress WHERE lesson_id IN (SELECT id FROM lessons WHERE course_id = ?)').all(course.id);
   const progressMap = {};
-  let watched_seconds = 0;
   progressRows.forEach(p => {
     progressMap[p.lesson_id] = p;
-    watched_seconds += p.watched_seconds || 0;
   });
+
+  const stats = db.prepare(`
+    SELECT 
+      COUNT(l.id) as total_lessons,
+      SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) as completed_lessons,
+      SUM(p.watched_seconds) as watched_seconds,
+      SUM(l.duration) as total_seconds
+    FROM lessons l
+    LEFT JOIN progress p ON l.id = p.lesson_id
+    WHERE l.course_id = ? AND l.file_type = 'video' AND l.is_missing = 0
+  `).get(course.id);
+
+  course.total_lessons = stats ? stats.total_lessons : 0;
+  course.completed_lessons = stats ? stats.completed_lessons : 0;
+  course.watched_seconds = (stats && stats.watched_seconds) ? stats.watched_seconds : 0;
   
-  course.watched_seconds = watched_seconds;
   if (course.total_duration_seconds > 0) {
     course.progress_pct = Math.round((course.watched_seconds / course.total_duration_seconds) * 100);
     if (course.progress_pct > 100) course.progress_pct = 100;
   } else {
-    course.progress_pct = 0;
+    course.progress_pct = course.total_lessons > 0 
+      ? Math.round((course.completed_lessons / course.total_lessons) * 100) 
+      : 0;
   }
   
   // Find last watched section

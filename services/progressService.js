@@ -5,6 +5,26 @@ function getProgress(lessonId) {
 }
 
 function updateProgress(lessonId, data) {
+  // Sync duration to lessons table if present and not set
+  if (data.total_seconds && data.total_seconds > 0) {
+    db.prepare(`
+      UPDATE lessons 
+      SET duration = ? 
+      WHERE id = ? AND (duration IS NULL OR duration = 0)
+    `).run(data.total_seconds, lessonId);
+  }
+
+  // If completed but watched_seconds not explicitly passed, infer it from duration
+  let watchedSeconds = data.watched_seconds;
+  if (watchedSeconds === undefined && data.completed === 1) {
+    const lesson = db.prepare('SELECT duration FROM lessons WHERE id = ?').get(lessonId);
+    if (lesson && lesson.duration > 0) {
+      watchedSeconds = lesson.duration;
+    } else if (data.total_seconds > 0) {
+      watchedSeconds = data.total_seconds;
+    }
+  }
+
   // Upsert pattern
   const existing = getProgress(lessonId);
   if (existing) {
@@ -21,7 +41,7 @@ function updateProgress(lessonId, data) {
       lesson_id: lessonId,
       completed: data.completed !== undefined ? data.completed : existing.completed,
       last_position: data.last_position !== undefined ? data.last_position : existing.last_position,
-      watched_seconds: data.watched_seconds !== undefined ? data.watched_seconds : existing.watched_seconds,
+      watched_seconds: watchedSeconds !== undefined ? watchedSeconds : existing.watched_seconds,
       total_seconds: data.total_seconds !== undefined ? data.total_seconds : existing.total_seconds
     });
   } else {
@@ -32,14 +52,19 @@ function updateProgress(lessonId, data) {
       lesson_id: lessonId,
       completed: data.completed || 0,
       last_position: data.last_position || 0,
-      watched_seconds: data.watched_seconds || 0,
+      watched_seconds: watchedSeconds || 0,
       total_seconds: data.total_seconds || null
     });
   }
 }
 
 function markCompleted(lessonId, isCompleted) {
-  updateProgress(lessonId, { completed: isCompleted ? 1 : 0 });
+  const lesson = db.prepare('SELECT duration FROM lessons WHERE id = ?').get(lessonId);
+  const dur = (lesson && lesson.duration) ? lesson.duration : 0;
+  updateProgress(lessonId, { 
+    completed: isCompleted ? 1 : 0,
+    watched_seconds: isCompleted ? dur : 0
+  });
 }
 
 module.exports = {

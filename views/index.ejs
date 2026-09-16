@@ -163,7 +163,7 @@
                     <% } %>
                     
                     <div class="course-meta">
-                        <span><%= course.total_lessons || 0 %> lezioni (<%= formatDuration(course.total_duration_seconds) %>)</span>
+                        <span><%= course.total_lessons || 0 %> lezioni<%= course.total_duration_seconds > 0 ? ' (' + formatDuration(course.total_duration_seconds) + ')' : '' %></span>
                         <span>
                             <% if (course.progress_pct === null) { %>
                                 Non iniziato

@@ -102,14 +102,19 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const saveProgress = (forceCompleted = null) => {
         const completed = forceCompleted !== null ? forceCompleted : isCompleted;
+        const totalDuration = video.duration && !isNaN(video.duration) ? Math.round(video.duration) : null;
+        const currentPos = video.currentTime && !isNaN(video.currentTime) ? Math.round(video.currentTime) : 0;
+        const watchedSec = completed && totalDuration ? totalDuration : currentPos;
+
         fetch('/api/progress', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 lesson_id: lessonId,
                 completed: completed ? 1 : 0,
-                last_position: video.currentTime,
-                total_seconds: video.duration || null
+                last_position: currentPos,
+                watched_seconds: watchedSec,
+                total_seconds: totalDuration
             })
         }).catch(err => console.error('Errore salvataggio progresso:', err));
     };
@@ -121,6 +126,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 video.currentTime = startPos;
             }
             initialSeekDone = true;
+        }
+        // Registra la durata nel database se non era ancora presente
+        if (video.duration && !isNaN(video.duration)) {
+            fetch('/api/progress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lesson_id: lessonId,
+                    total_seconds: Math.round(video.duration)
+                })
+            }).catch(() => {});
         }
     });
 

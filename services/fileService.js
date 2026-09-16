@@ -51,15 +51,21 @@ async function getVideoDuration(absolutePath) {
       '-of', 'default=noprint_wrappers=1:nokey=1',
       absolutePath
     ], { timeout: 5000 });
-    const duration = parseFloat(stdout);
-    return isNaN(duration) ? 0 : duration;
+    const duration = parseFloat(stdout.trim());
+    return isNaN(duration) ? 0 : Math.round(duration);
   } catch (e) {
-    return 0; // ffprobe mancante o fallito
+    console.warn(`[ffprobe] Impossibile leggere durata per "${absolutePath}": ${e.message}`);
+    return 0; // ffprobe non installato nel sistema/container o errore lettura file
   }
 }
 
 async function scanCourse(coursePath) {
-  const absolutePath = safeResolveCoursePath(coursePath);
+  let absolutePath = null;
+  if (coursePath && path.isAbsolute(coursePath) && fs.existsSync(coursePath)) {
+    absolutePath = coursePath;
+  } else {
+    absolutePath = safeResolveCoursePath(coursePath);
+  }
   
   const result = {
     rootSection: { lessons: [], materials: [], children: [] },
@@ -68,7 +74,7 @@ async function scanCourse(coursePath) {
     allMaterials: [] // Flat list of all materials
   };
 
-  if (!absolutePath) return result;
+  if (!absolutePath || !fs.existsSync(absolutePath)) return result;
   
   let entries;
   try {
